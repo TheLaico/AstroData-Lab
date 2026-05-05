@@ -1,0 +1,1 @@
+# Módulo para búsqueda semántica

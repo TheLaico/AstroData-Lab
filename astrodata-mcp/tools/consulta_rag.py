@@ -1,0 +1,1 @@
+# Módulo para consultas RAG
