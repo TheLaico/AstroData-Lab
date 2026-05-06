@@ -12,7 +12,8 @@ import os
 
 
 # Cargar variables de entorno desde el archivo .env
-load_dotenv()
+from pathlib import Path
+load_dotenv(Path(__file__).parent / ".env")
 
 
 class Ajustes:
