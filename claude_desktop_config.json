@@ -1,26 +1,11 @@
 {
-  "_comentario_general": "Configuración para registrar AstroData Lab en Claude Desktop vía MCP",
-
   "mcpServers": {
-
-    "_comentario_servidores": "Cada clave dentro de mcpServers es un servidor MCP disponible para Claude Desktop",
-
     "astrodata-mcp": {
-
-      "description": "Servidor MCP de AstroData Lab. Expone herramientas para consultar objetos astronómicos, realizar búsqueda semántica con pgvector, ejecutar pipelines RAG y evaluar respuestas con métricas RAGAS. Requiere PostgreSQL 15+ con la extensión pgvector activa.",
-
-      "_comentario_comando": "Usar la ruta absoluta al intérprete Python del entorno virtual garantiza que las dependencias estén disponibles",
-      "command": "python",
-
-      "_comentario_args": "Apunta al script principal del servidor MCP dentro de la carpeta server/",
-      "args": [
-        "/RUTA/AL/PROYECTO/astrodata-mcp/server/servidor_mcp.py"
-      ],
-
-      "_comentario_env": "PYTHONPATH apunta a la raíz del proyecto para que los imports absolutos (database/, tools/, models/, etc.) funcionen correctamente",
+      "command": "C:\\Users\\rbx56\\OneDrive\\Desktop\\University\\lV SEMESTRE\\BASES DATOS RELACIONALES\\Proyecto\\AstroData-Lab\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "server.servidor_mcp"],
+      "cwd": "C:\\Users\\rbx56\\OneDrive\\Desktop\\University\\lV SEMESTRE\\BASES DATOS RELACIONALES\\Proyecto\\AstroData-Lab",
       "env": {
-        "PYTHONPATH": "/RUTA/AL/PROYECTO/astrodata-mcp",
-        "_comentario_rutas": "macOS/Linux: reemplaza /RUTA/AL/PROYECTO con la ruta real. Ejemplo macOS: /Users/tu_usuario/proyectos  |  Ejemplo Linux: /home/tu_usuario/proyectos"
+        "PYTHONPATH": "C:\\Users\\rbx56\\OneDrive\\Desktop\\University\\lV SEMESTRE\\BASES DATOS RELACIONALES\\Proyecto\\AstroData-Lab"
       }
     }
   }
