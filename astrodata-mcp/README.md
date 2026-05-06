@@ -1,230 +1,162 @@
+# AstroData Lab
+
+Sistema de consulta astronómica con capacidades RAG (Retrieval-Augmented Generation) conectado a Claude Desktop vía el protocolo MCP (Model Context Protocol). Permite a Claude consultar, crear y analizar objetos astronómicos almacenados en PostgreSQL con búsqueda vectorial mediante pgvector.
 
 ---
 
-## Contexto: AstroData Lab — Sistema RAG Híbrido de Exploración Astronómica
+## Descripción del proyecto
 
-**Autores:** Nicolas Vargas, Valeria Londoño | **Curso:** Bases de Datos Relacionales | 
+AstroData Lab resuelve el problema de acceder a grandes volúmenes de datos científicos astronómicos desde un asistente de IA. En lugar de que Claude responda con conocimiento de entrenamiento, puede consultar en tiempo real una base de datos relacional enriquecida con embeddings vectoriales, permitiendo respuestas factuales y actualizadas.
 
----
+**Tecnologías principales:**
 
-### ¿Qué es AstroData Lab?
-
-AstroData Lab es un sistema de base de datos híbrido (relacional + vectorial) diseñado para explorar y analizar datos astronómicos con el objetivo de estudiar **condiciones de habitabilidad en el universo**. Gestiona una jerarquía de cuerpos celestes: Galaxias → Sistemas Estelares → Estrellas → Planetas → Lunas.
-
-El problema central que resuelve es la coexistencia de **datos estructurados** (atributos físicos exactos) y **datos semánticos** (texto científico, imágenes), integrándolos mediante un pipeline **RAG (Retrieval-Augmented Generation)**: recupera información relevante desde la BD relacional y la BD vectorial, y usa un LLM para generar respuestas contextualizadas en lenguaje natural.
-
----
-
-### Arquitectura general
-
-El sistema tiene **dos componentes principales**:
-
-1. **Modelo Relacional (PostgreSQL)** — datos estructurados jerárquicos sobre cuerpos celestes, documentos, observaciones, usuarios y consultas.
-2. **Modelo Vectorial (pgvector)** — embeddings de texto e imágenes para búsqueda por similitud semántica.
+- **PostgreSQL 15+** con extensión **pgvector** para almacenamiento relacional y búsqueda vectorial por similitud coseno.
+- **MCP (Model Context Protocol)** para exponer herramientas a Claude Desktop como funciones invocables.
+- **Claude Desktop** como interfaz conversacional que consume las herramientas MCP.
+- **sentence-transformers / MiniLM** (`all-MiniLM-L6-v2`) para embeddings de texto de 384 dimensiones.
+- **CLIP** (`openai/clip-vit-base-patch32`) para embeddings de imágenes astronómicas de 512 dimensiones.
+- **RAGAS** como framework de métricas para evaluar la calidad de respuestas RAG (faithfulness, answer relevancy, context recall).
 
 ---
 
-### Esquema de base de datos
+## Arquitectura
 
-#### Tablas relacionales (PostgreSQL)
+El proyecto se organiza en 7 carpetas con responsabilidades bien delimitadas:
 
-**Jerarquía astronómica (patrón IS-A — `Objeto_Astronomico` como supertipo):**
-- `Objeto_Astronomico(id_objeto PK, nombre, descripcion_cientifica)` — entidad base para todos los cuerpos celestes
-- `Galaxia(id_objeto PK→OA, id_tipo_galaxia FK, distancia_años_luz)`
-- `Sistema_Estelar(id_objeto PK→OA, id_galaxia FK)`
-- `Estrella(id_objeto PK→OA, id_tipo_estrella FK, id_sistema FK, masa_masas_solares, temperatura_K)`
-- `Planeta(id_objeto PK→OA, id_tipo_planeta FK, id_sistema FK, masa_masas_terrestres, temperatura_K)`
-- `Luna(id_objeto PK→OA, id_planeta FK, radio_km)`
+| Carpeta | Responsabilidad |
+|---|---|
+| `server/` | Punto de entrada del servidor MCP. Registra las herramientas e inicia el servidor que Claude Desktop consume. |
+| `tools/` | Lógica de negocio expuesta como herramientas MCP. Orquesta flujos RAG, CRUD, búsqueda semántica y evaluación sin implementar persistencia directa. |
+| `database/` | Capa de acceso a datos. Repositorios que encapsulan todas las consultas SQL y operaciones con asyncpg y pgvector. |
+| `embeddings/` | Codificadores de embeddings. Define la interfaz `CodificadorBase` e implementaciones concretas para texto (MiniLM) e imagen (CLIP). |
+| `models/` | Modelos de datos Pydantic v2. Representan las entidades del dominio (objetos astronómicos, consultas, evaluaciones, resultados). |
+| `config/` | Configuración centralizada. Lee variables de entorno desde `.env` y las expone como objeto de ajustes tipado. |
+| `tests/` | Suite de pruebas con pytest y mocks. Cubre RAG, CRUD, búsqueda semántica y evaluación RAGAS sin necesidad de BD real. |
 
-**Catálogos de tipos:**
-- `Tipo_Galaxia(id, nombre_tipo)` — ej: Espiral, Elíptica, Irregular
-- `Tipo_Estrella(id, nombre_tipo)` — ej: Enana amarilla, Gigante roja, Enana blanca
-- `Tipo_Planeta(id, nombre_tipo)` — ej: Rocoso, Gaseoso, Oceánico, Desértico
+---
 
-**Habitabilidad:**
-- `Caracteristica_Ambiental(id PK, id_planeta FK, tipo, valor)` — ej: tipo='agua_liquida', valor='presente'
-- `Evaluacion_Habitabilidad(id PK, id_planeta FK, puntaje 0-1, descripcion, fecha)`
+## Requisitos previos
 
-**Documentos e imágenes:**
-- `Documento(id_doc PK, titulo, idioma, fecha, fuente, contenido_texto, id_objeto FK)`
-- `Imagen(id_imagen PK, ruta_archivo, descripcion, etiquetas, id_doc FK)`
+- Python 3.11 o superior
+- PostgreSQL 15 o superior con la extensión `pgvector` instalada y activa
+- Claude Desktop instalado en macOS o Linux
 
-**Telescopios y observaciones:**
-- `Telescopio(id PK, nombre, tipo, ubicacion)`
-- `Observacion(id PK, id_telescopio FK, id_objeto FK, fecha, descripcion)`
+---
 
-**Usuarios y consultas (pipeline RAG):**
-- `Usuario(id PK, nombre, correo, fecha_registro)`
-- `Consulta(id PK, texto_pregunta, fecha, id_usuario FK)`
-- `Resultado(id PK, descripcion_resultado, relevancia 0-1, id_consulta FK, id_doc FK, id_imagen FK)`
-- `Evaluacion(id PK, faithfulness 0-1, answer_relevancy 0-1, context_recall 0-1, modelo_eval, fecha, id_consulta FK)` — métricas RAGAS
+## Instalación paso a paso
 
-#### Tablas vectoriales (pgvector)
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/tu-usuario/astrodata-mcp.git
+cd astrodata-mcp
 
-- `Embedding_Texto(id PK, id_doc FK, chunk_id, estrategia_chunking, vector(384), modelo)` — índice IVFFlat coseno, lists=100
-- `Embedding_Imagen(id PK, id_imagen FK, vector(512), modelo)` — índice IVFFlat coseno, lists=50
-- `Embedding_Consulta(id PK, id_consulta FK, vector(384), modelo)` — índice IVFFlat coseno, lists=50
+# 2. Crear entorno virtual
+python -m venv .venv
+source .venv/bin/activate          # macOS/Linux
+# .venv\Scripts\activate           # Windows
 
-**Campos vectorizables** (usados para búsqueda semántica):
-- `Consulta.texto_pregunta` → input del pipeline RAG
-- `Documento.contenido_texto` y `Documento.titulo`
-- `Objeto_Astronomico.descripcion_cientifica` → permite búsquedas como "planeta similar a la Tierra"
-- `Imagen.descripcion` e `Imagen.etiquetas`
-- `Imagen.ruta_archivo` (vectorización visual con CLIP, vector 512d)
-- `Observacion.descripcion`
+# 3. Instalar dependencias
+pip install -r requerimientos.txt
 
-**Consulta vectorial típica (buscar top-5 chunks más similares a una pregunta):**
-```sql
-SELECT d.titulo, e.chunk_id, e.estrategia_chunking,
-       1 - (e.vector <=> $1::vector) AS similitud
-FROM Embedding_Texto e
-JOIN Documento d ON e.id_doc = d.id_doc
-ORDER BY e.vector <=> $1::vector
-LIMIT 5;
--- $1 = embedding del texto de la consulta del usuario
+# 4. Copiar archivo de variables de entorno
+cp config/.env.ejemplo config/.env
+
+# 5. Editar config/.env con tus credenciales reales
+#    DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 ```
 
 ---
 
-### Normalización
+## Configuración de la base de datos
 
-Todas las tablas están en **Tercera Forma Normal (3FN)**. Las decisiones clave fueron:
-- Separar catálogos de tipos (Tipo_Galaxia, Tipo_Estrella, Tipo_Planeta) para evitar dependencias transitivas.
-- Tablas de embeddings independientes para permitir múltiples representaciones por documento/imagen.
-- `Caracteristica_Ambiental` como entidad extensible (múltiples características por planeta).
-- Patrón IS-A con `Objeto_Astronomico` como supertipo para centralizar nombre y descripción.
+Ejecutar los scripts SQL en el siguiente orden desde una conexión a PostgreSQL:
 
----
+```bash
+# 1. Habilitar la extensión pgvector y crear el esquema base
+psql -U tu_usuario -d tu_base -f sql/pgvector.sql
 
-### Experimento de Chunking
+# 2. Crear todas las tablas del dominio astronómico
+psql -U tu_usuario -d tu_base -f sql/PostgreSQL.sql
+```
 
-Se comparan dos estrategias para fragmentar textos antes de vectorizar:
-
-| Estrategia | Tamaño | Overlap | Criterio de corte |
-|---|---|---|---|
-| **A — Fixed-size** | 256 tokens | 32 tokens | Por caracteres fijos (línea base) |
-| **B — Sentence-based** | 128–512 tokens (variable) | 1-2 oraciones | Punto final + salto de línea |
-
-**Hipótesis:** La estrategia B superará a la A porque las descripciones astronómicas están estructuradas en oraciones semánticamente completas.
-
-**Métricas de evaluación (RAGAS):** `faithfulness`, `answer_relevancy`, `context_recall`.
+> Es importante respetar el orden: pgvector debe habilitarse antes de crear tablas con columnas de tipo `vector`.
 
 ---
 
-### Datos de ejemplo cargados
+## Conexión a Claude Desktop
 
-Jerarquía de prueba: Vía Láctea → Sistema Solar → Sol → Tierra → Luna, con características ambientales de la Tierra (agua líquida, 21% oxígeno, campo magnético) y evaluación de habitabilidad = 1.0.
+1. Abrir (o crear) el archivo de configuración de Claude Desktop:
+   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Linux:** `~/.config/Claude/claude_desktop_config.json`
+
+2. Editar el archivo reemplazando la ruta del proyecto:
+
+```json
+{
+  "mcpServers": {
+    "astrodata-mcp": {
+      "command": "python",
+      "args": ["/ruta/real/astrodata-mcp/server/servidor_mcp.py"],
+      "env": {
+        "PYTHONPATH": "/ruta/real/astrodata-mcp"
+      }
+    }
+  }
+}
+```
+
+3. Guardar el archivo y **reiniciar Claude Desktop** completamente.
+
+4. Verificar que el ícono de herramientas aparezca activo en la interfaz de Claude.
 
 ---
+
+## Uso básico
+
+Una vez conectado el servidor MCP, puedes hacer preguntas directamente a Claude:
+
+**Consulta RAG sobre un objeto:**
+> "¿Cuáles son las características científicas de la nebulosa de Orión según la base de datos?"
+
+**Búsqueda de planetas habitables:**
+> "Lista los planetas con puntaje de habitabilidad mayor a 0.7 que tenemos registrados."
+
+**Evaluación de una respuesta:**
+> "Evalúa qué tan buena fue la respuesta que generaste para la consulta número 42."
+
 ---
 
-## SECCIÓN 6: IMPLEMENTACIÓN MCP (Model Context Protocol) EN CLAUDE DESKTOP
+## Ejecución de tests
 
-### 6.1 ¿Qué es el MCP en este contexto?
+```bash
+# Ejecutar toda la suite con salida detallada
+pytest tests/ -v
 
-El sistema AstroData Lab expone sus capacidades a Claude mediante un **servidor MCP (Model Context Protocol)**, que actúa como puente entre Claude Desktop y la infraestructura de base de datos del proyecto (PostgreSQL + pgvector). Esto permite que Claude interactúe directamente con los datos astronómicos reales —sin necesidad de copiar SQL ni exportar archivos— usando lenguaje natural como interfaz principal.
+# Ejecutar con reporte de cobertura
+pytest tests/ -v --cov=tools --cov=database --cov-report=term-missing
 
-El MCP se consume exclusivamente desde **Claude Desktop** en esta fase, orientado a uso interno por investigadores y desarrolladores del proyecto.
+# Ejecutar solo un módulo de tests
+pytest tests/prueba_rag.py -v
+```
+
+> Los tests usan mocks completos de repositorios y codificadores, por lo que **no requieren una base de datos activa** para ejecutarse.
 
 ---
 
-### 6.2 Herramientas (Tools) expuestas por el MCP
+## Principios de diseño
 
-El servidor MCP define las siguientes herramientas que Claude puede invocar durante una conversación:
-
-####  Grupo 1 — Consultas RAG en lenguaje natural
-
-| Tool | Descripción | Inputs principales |
+| Principio SOLID | Módulo que lo implementa | Por qué |
 |---|---|---|
-| `rag_query` | Recibe una pregunta en lenguaje natural, la vectoriza, recupera los chunks más similares desde `Embedding_Texto` y devuelve el contexto para que Claude genere una respuesta | `texto_pregunta: str`, `top_k: int = 5` |
-| `get_context_for_object` | Recupera documentos y descripciones científicas asociadas a un objeto astronómico específico | `id_objeto: int` o `nombre: str` |
-
-####  Grupo 2 — Gestión de objetos astronómicos (CRUD)
-
-| Tool | Descripción | Inputs principales |
-|---|---|---|
-| `create_objeto_astronomico` | Registra un nuevo cuerpo celeste (galaxia, estrella, planeta, luna) con su descripción científica | `nombre: str`, `tipo: enum`, `descripcion_cientifica: str`, `atributos: dict` |
-| `get_objeto_astronomico` | Consulta un objeto por ID o nombre, retornando su jerarquía completa | `id_objeto: int` o `nombre: str` |
-| `update_objeto_astronomico` | Actualiza atributos físicos o descripción de un objeto existente | `id_objeto: int`, `campos: dict` |
-| `delete_objeto_astronomico` | Elimina un objeto y sus dependencias en cascada | `id_objeto: int` |
-| `list_planetas_habitables` | Lista planetas filtrados por rango de puntaje de habitabilidad y características ambientales | `puntaje_min: float`, `caracteristicas: list` |
-
-####  Grupo 3 — Búsqueda vectorial / semántica
-
-| Tool | Descripción | Inputs principales |
-|---|---|---|
-| `semantic_search_documentos` | Vectoriza una consulta y busca los documentos más relevantes por similitud coseno en `Embedding_Texto` | `query: str`, `top_k: int`, `estrategia_chunking: str` |
-| `semantic_search_imagenes` | Busca imágenes astronómicas similares a una descripción textual usando `Embedding_Imagen` | `query: str`, `top_k: int` |
-| `find_similar_planets` | Dado un planeta de referencia, encuentra planetas con descripción científica similar en el espacio vectorial | `id_planeta: int`, `top_k: int` |
-
-####  Grupo 4 — Evaluación de resultados (RAGAS)
-
-| Tool | Descripción | Inputs principales |
-|---|---|---|
-| `evaluate_rag_response` | Registra y calcula métricas RAGAS (faithfulness, answer_relevancy, context_recall) para una consulta ya resuelta | `id_consulta: int`, `respuesta_generada: str`, `contexto_recuperado: list`, `modelo_eval: str` |
-| `get_evaluacion_historica` | Retorna el historial de evaluaciones de un usuario o por rango de fechas para análisis de calidad | `id_usuario: int`, `fecha_desde: date`, `fecha_hasta: date` |
+| **SRP** — Responsabilidad Única | `tools/consulta_rag.py`, `tools/gestion_objetos.py` | Cada clase de tools solo orquesta su flujo específico; no implementa persistencia ni cálculo de embeddings. |
+| **OCP** — Abierto/Cerrado | `database/repositorio_objetos.py`, `database/repositorio_documentos.py` | Los repositorios pueden extenderse con nuevos métodos sin modificar los existentes. |
+| **LSP** — Sustitución de Liskov | `embeddings/codificador_texto.py`, `embeddings/codificador_imagen.py` | Ambas implementaciones son intercambiables donde se use `CodificadorBase` sin romper el comportamiento esperado. |
+| **DIP** — Inversión de Dependencias | `embeddings/interfaz_codificador.py` + inyección en `tools/` | Las herramientas dependen de la abstracción `CodificadorBase`, nunca de `CodificadorTexto` o `CodificadorImagen` directamente. |
 
 ---
 
-### 6.3 Flujo de una interacción típica vía MCP
+## Referencias
 
-```
-Usuario (Claude Desktop)
-    │
-    │  "¿Qué planetas tienen condiciones similares a la Tierra?"
-    ▼
-Claude (LLM)
-    │
-    ├─► [Tool call] rag_query(texto_pregunta="...", top_k=5)
-    │         │
-    │         ▼
-    │    Servidor MCP
-    │         │
-    │         ├─ Vectoriza la pregunta → Embedding_Consulta
-    │         ├─ Busca similitud coseno → Embedding_Texto / Embedding_Imagen
-    │         ├─ Recupera Documento, Objeto_Astronomico, Caracteristica_Ambiental
-    │         └─ Retorna contexto estructurado a Claude
-    │
-    ├─► Claude genera respuesta con el contexto recuperado
-    │
-    └─► [Tool call] evaluate_rag_response(id_consulta, respuesta, contexto, modelo)
-              │
-              └─ Guarda métricas en tabla Evaluacion (faithfulness, answer_relevancy, context_recall)
-```
-
----
-
-### 6.4 Arquitectura del servidor MCP
-
-- **Protocolo:** MCP sobre `stdio` (transporte estándar para Claude Desktop)
-- **Lenguaje de implementación previsto:** Python con `mcp` SDK oficial de Anthropic
-- **Conexión a BD:** `asyncpg` para PostgreSQL + `pgvector` para operaciones vectoriales
-- **Modelo de embeddings:** `all-MiniLM-L6-v2` (384d) para texto, `CLIP` (512d) para imágenes
-- **Registro en Claude Desktop:** entrada en `claude_desktop_config.json` apuntando al ejecutable del servidor
-
-**Estructura de archivos prevista:**
-```
-astrodata-mcp/
-├── server.py              # Punto de entrada MCP, registro de tools
-├── tools/
-│   ├── rag.py             # rag_query, get_context_for_object
-│   ├── crud.py            # create/get/update/delete objeto astronómico
-│   ├── search.py          # semantic_search_documentos, imagenes, find_similar_planets
-│   └── evaluacion.py      # evaluate_rag_response, get_evaluacion_historica
-├── db/
-│   ├── connection.py      # Pool asyncpg
-│   └── queries.py         # Queries SQL y vectoriales reutilizables
-└── embeddings/
-    └── encoder.py         # Lógica de vectorización (MiniLM + CLIP)
-```
-
----
-
-### 6.5 Restricciones y consideraciones de diseño
-
-- **Solo lectura por defecto en RAG:** las tools del Grupo 1 no modifican la BD; solo consultan y registran la consulta del usuario.
-- **Autenticación:** el acceso al MCP está restringido a sesiones de Claude Desktop autenticadas; no hay endpoint público.
-- **Consistencia híbrida:** al crear o actualizar un `Objeto_Astronomico` vía CRUD, el servidor MCP es responsable de disparar la regeneración del embedding correspondiente en `Embedding_Texto`, manteniendo coherencia entre la capa relacional y la vectorial.
-- **Chunking configurable:** `semantic_search_documentos` acepta el parámetro `estrategia_chunking` (`fixed` | `sentence` | `semantic`) para permitir comparar estrategias en tiempo de consulta, alineado con el experimento de la Sección 5.
-
----
+- Lewis, P. et al. (2020). *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks*. NeurIPS 2020.
+- Gao, Y. et al. (2023). *Retrieval-Augmented Generation for Large Language Models: A Survey*. arXiv:2312.10997.
+- Reimers, N. & Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*. EMNLP 2019.
+- Es, S. et al. (2023). *RAGAS: Automated Evaluation of Retrieval Augmented Generation*. arXiv:2309.15217.
