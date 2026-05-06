@@ -1,0 +1,126 @@
+# Entornos virtuales Python
+venv/
+.venv/
+env/
+ENV/
+.env
+.env.local
+.env.*.local
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Modelos de ML (pueden ser muy grandes)
+models/
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# Caché de datos
+*.cache
+.cache/
+
+# Base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos temporales
+*.tmp
+*.temp
+*.bak
+*.backup
+~*
+.~*
+
+# Node (si hay frontend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# MacOS
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+$RECYCLE.BIN/
+ehthumbs.db
+
+# IDE específicos de JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# PyCharm
+.idea/
+*.py.iml
+
+# Directorios de configuración local
+.local/
+.config/
+
+# Archivos de salida de pruebas
+test-results/
+test-reports/
+
+# Datos locales
+data/
+datasets/
+local_data/
+
+# Configuración privada
+config/private/
+secrets/
+credentials.json
