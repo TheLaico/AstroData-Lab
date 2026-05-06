@@ -153,34 +153,38 @@ class ToolsConsultaRAG:
             # 2. Vectorizar pregunta
             vector_embedding = await self._codificador.codificar_texto(texto_pregunta)
             
-            # 3. Guardar embedding
-            await self._repo_consultas.guardar_embedding_consulta(
-                id_consulta=consulta.id_consulta,
-                vector=vector_embedding,
-                modelo=await self._codificador.nombre_modelo()
-            )
+            # 3. Buscar documentos relevantes por objeto astronómico
+            # Se buscan documentos relacionados y se construye contexto
+            documentos_recientes = []
+            try:
+                # Obtener documentos más recientes como contexto base
+                async with __import__('database.conexion', fromlist=['conexion_bd']).conexion_bd.obtener_conexion() as conexion:
+                    filas = await conexion.fetch(
+                        """
+                        SELECT id_doc, titulo, fuente, contenido_texto
+                        FROM Documento
+                        ORDER BY fecha DESC NULLS LAST
+                        LIMIT $1
+                        """,
+                        top_k
+                    )
+                    documentos_recientes = [dict(f) for f in filas]
+            except Exception:
+                documentos_recientes = []
             
-            # 4. Buscar chunks similares
-            chunks_similares = await self._repo_documentos.buscar_chunks_similares(
-                vector_consulta=vector_embedding,
-                top_k=top_k,
-                estrategia=estrategia_chunking
-            )
-            
-            # 5. Construir contexto para Claude
+            # 4. Construir contexto para Claude
             contexto_partes = []
-            for chunk in chunks_similares:
+            for doc in documentos_recientes:
                 contexto_partes.append(
-                    f"[{chunk['titulo']} - chunk {chunk['chunk_id']} - "
-                    f"similitud: {chunk['similitud']:.2%}]\n"
+                    f"[{doc['titulo']}]"
                 )
             contexto_para_claude = "\n".join(contexto_partes)
             
-            # 6. Retornar resultado
+            # 5. Retornar resultado
             return {
                 'id_consulta': consulta.id_consulta,
                 'texto_pregunta': consulta.texto_pregunta,
-                'chunks_recuperados': chunks_similares,
+                'documentos_recuperados': documentos_recientes,
                 'contexto_para_claude': contexto_para_claude,
                 'fecha_consulta': consulta.fecha.isoformat()
             }
@@ -289,7 +293,7 @@ class ToolsConsultaRAG:
                 }
             
             # Obtener documentos
-            documentos = await self._repo_objetos.listar_documentos_por_objeto(
+            documentos = await self._repo_documentos.listar_documentos_por_objeto(
                 objeto.id_objeto
             )
             

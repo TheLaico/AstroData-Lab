@@ -350,7 +350,7 @@ class RepositorioObjetos:
                 await conexion.execute(
                     """
                     INSERT INTO Planeta (id_objeto, id_tipo_planeta, id_sistema, 
-                                         masa_masas_terrestres, temperatura_K)
+                                         masa, temperatura)
                     VALUES ($1, $2, $3, $4, $5)
                     """,
                     id_objeto,
@@ -403,8 +403,8 @@ class RepositorioObjetos:
                 filas = await conexion.fetch(
                     """
                     SELECT p.id_objeto, o.nombre, o.descripcion_cientifica,
-                           p.id_tipo_planeta, p.id_sistema, p.masa_masas_terrestres,
-                           p.temperatura_K, eh.puntaje
+                           p.id_tipo_planeta, p.id_sistema, p.masa,
+                           p.temperatura, eh.puntaje
                     FROM Planeta p
                     JOIN Objeto_Astronomico o ON p.id_objeto = o.id_objeto
                     JOIN Evaluacion_Habitabilidad eh ON p.id_objeto = eh.id_planeta
@@ -423,8 +423,8 @@ class RepositorioObjetos:
                             descripcion_cientifica=fila['descripcion_cientifica'],
                             id_tipo_planeta=fila['id_tipo_planeta'],
                             id_sistema=fila['id_sistema'],
-                            masa=fila['masa_masas_terrestres'],
-                            temperatura=fila['temperatura_K']
+                            masa=fila['masa'],
+                            temperatura=fila['temperatura']
                         )
                     )
                 

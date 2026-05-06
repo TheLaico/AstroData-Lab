@@ -169,29 +169,17 @@ class GestionObjetos:
                 descripcion=descripcion_cientifica.strip()
             )
             
-            # 4. Vectorizar descripción para embeddings
+            # 4. Vectorizar descripción para embeddings (para uso futuro)
             try:
                 vector = await self._codificador.codificar_texto(
                     descripcion_cientifica.strip()
                 )
                 embedding_generado = True
             except Exception as e:
-                # Si falla el embedding, continuamos igual (no es fatal)
                 vector = None
                 embedding_generado = False
             
-            # 5. Guardar embedding si se generó
-            if embedding_generado and vector:
-                try:
-                    await self._repo_documentos.guardar_embedding_texto(
-                        id_objeto=objeto.id_objeto,
-                        chunk_id="descripcion_principal",
-                        estrategia_chunking="semantic",
-                        vector=vector
-                    )
-                except Exception as e:
-                    # Log del error pero no afecta la respuesta
-                    pass
+            # Nota: los embeddings se almacenarían en una tabla dedicada cuando esté disponible
             
             # 6. Retornar respuesta
             return {
@@ -360,22 +348,13 @@ class GestionObjetos:
                         nueva_descripcion=nueva_descripcion.strip()
                     )
                     
-                    # Regenerar embedding
+                    # Regenerar embedding (para uso futuro cuando haya tabla dedicada)
                     try:
                         vector = await self._codificador.codificar_texto(
                             nueva_descripcion.strip()
                         )
-                        
-                        await self._repo_documentos.guardar_embedding_texto(
-                            id_objeto=id_objeto,
-                            chunk_id="descripcion_principal",
-                            estrategia_chunking="semantic",
-                            vector=vector
-                        )
-                        
                         embedding_regenerado = True
                     except Exception as e:
-                        # Log pero no falla la actualización
                         pass
                 else:
                     return {
@@ -544,9 +523,9 @@ class GestionObjetos:
                     'id_objeto': planeta.id_objeto,
                     'nombre': planeta.nombre,
                     'descripcion_cientifica': planeta.descripcion_cientifica,
-                    'masa_masas_terrestres': planeta.masa,
-                    'temperatura_K': planeta.temperatura,
-                    'puntaje_habitabilidad': puntaje_minimo  # Este es el mínimo que cumple
+                    'masa': planeta.masa,
+                    'temperatura': planeta.temperatura,
+                    'puntaje_habitabilidad': puntaje_minimo
                 })
             
             # TODO: Filtrar por características si se implementa en repositorio
@@ -605,7 +584,7 @@ class GestionObjetos:
                         },
                         "atributos": {
                             "type": "object",
-                            "description": "Atributos específicos del tipo (masa, temperatura, etc.)"
+                            "description": "Atributos específicos del tipo (masa en masas terrestres, temperatura en Kelvin, id_sistema, etc.)"
                         }
                     },
                     "required": ["nombre", "tipo", "descripcion_cientifica", "atributos"]

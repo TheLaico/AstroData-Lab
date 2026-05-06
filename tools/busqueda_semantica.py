@@ -65,267 +65,6 @@ class BusquedaSematica:
         self._repo_objetos = RepositorioObjetos()
     
     
-    async def buscar_documentos_semanticos(
-        self,
-        consulta: str,
-        top_k: int = 5,
-        estrategia_chunking: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Busca documentos científicos por similitud semántica.
-        
-        Pipeline:
-        1. Vectoriza la consulta en lenguaje natural (384 dimensiones)
-        2. Busca los chunks de texto más similares en BD usando pgvector
-        3. Retorna documentos ordenados por similitud descendente
-        
-        Opcionalmente filtra por estrategia de chunking para refinar búsquedas
-        (fixed = tamaño fijo, sentence = límites de oraciones, semantic = chunks semánticos).
-        
-        Args:
-            consulta: Pregunta en lenguaje natural
-                     (ej: "¿Cómo se forma una galaxia espiral?")
-            top_k: Número máximo de documentos/chunks a retornar (default: 5)
-            estrategia_chunking: Filtrar por estrategia ('fixed', 'sentence', 'semantic')
-                                Si None, busca en todas las estrategias
-        
-        Returns:
-            Dict con estructura:
-            {
-                'documentos': [
-                    {
-                        'titulo': str,
-                        'chunk_id': int,
-                        'estrategia': str,
-                        'puntuacion_similitud': float (0.0-1.0)
-                    },
-                    ...
-                ],
-                'total': int,
-                'consulta': str,
-                'estrategia_filtro': str | None
-            }
-            
-            O en caso de error:
-            {
-                'error': str,
-                'detalles': str,
-                'documentos': [],
-                'total': 0
-            }
-        
-        Example:
-            >>> resultado = await busqueda.buscar_documentos_semanticos(
-            ...     consulta="Exoplanetas habitables",
-            ...     top_k=3,
-            ...     estrategia_chunking='semantic'
-            ... )
-            >>> resultado['documentos'][0]['puntuacion_similitud']
-            0.89
-        """
-        try:
-            # Validar inputs
-            if not consulta or not consulta.strip():
-                return {
-                    'error': "La consulta no puede estar vacía",
-                    'detalles': "",
-                    'documentos': [],
-                    'total': 0
-                }
-            
-            if top_k <= 0:
-                return {
-                    'error': "top_k debe ser mayor a 0",
-                    'detalles': f"Valor recibido: {top_k}",
-                    'documentos': [],
-                    'total': 0
-                }
-            
-            if estrategia_chunking and estrategia_chunking not in ('fixed', 'sentence', 'semantic'):
-                return {
-                    'error': "estrategia_chunking inválida",
-                    'detalles': f"Debe ser 'fixed', 'sentence', 'semantic' u omitirse",
-                    'documentos': [],
-                    'total': 0
-                }
-            
-            # Vectorizar consulta
-            try:
-                vector_consulta = await self._codificador.codificar_texto(
-                    consulta.strip()
-                )
-            except Exception as e:
-                return {
-                    'error': "Error al vectorizar consulta",
-                    'detalles': str(e),
-                    'documentos': [],
-                    'total': 0
-                }
-            
-            # Buscar chunks similares
-            try:
-                chunks = await self._repo_documentos.buscar_chunks_similares(
-                    vector_consulta=vector_consulta,
-                    top_k=top_k,
-                    estrategia=estrategia_chunking
-                )
-            except Exception as e:
-                return {
-                    'error': "Error al buscar chunks similares",
-                    'detalles': str(e),
-                    'documentos': [],
-                    'total': 0
-                }
-            
-            # Formatear resultados
-            documentos_lista = []
-            for chunk in chunks:
-                documentos_lista.append({
-                    'titulo': chunk['titulo'],
-                    'chunk_id': chunk['chunk_id'],
-                    'estrategia': chunk['estrategia_chunking'],
-                    'puntuacion_similitud': round(chunk['similitud'], 4)
-                })
-            
-            return {
-                'documentos': documentos_lista,
-                'total': len(documentos_lista),
-                'consulta': consulta.strip(),
-                'estrategia_filtro': estrategia_chunking
-            }
-        
-        except Exception as e:
-            return {
-                'error': "Error al buscar documentos semánticamente",
-                'detalles': str(e),
-                'documentos': [],
-                'total': 0
-            }
-    
-    
-    async def buscar_imagenes_semanticas(
-        self,
-        descripcion: str,
-        top_k: int = 5
-    ) -> Dict[str, Any]:
-        """
-        Busca imágenes astronómicas por descripción en lenguaje natural.
-        
-        Búsqueda cross-modal: vectoriza la descripción textual en el espacio CLIP
-        y busca las imágenes más similares. Permite usar texto para buscar en
-        imágenes sin necesidad de proporcionar una imagen como entrada.
-        
-        Pipeline:
-        1. Vectoriza descripción en lenguaje natural (384d con CodificadorTexto)
-        2. Busca en embeddings CLIP de imágenes (512d) usando similitud
-        3. Retorna imágenes ordenadas por similitud descendente
-        
-        Args:
-            descripcion: Descripción textual de la imagen buscada
-                        (ej: "Galaxia espiral azul con anillo de polvo")
-            top_k: Número máximo de imágenes a retornar (default: 5)
-        
-        Returns:
-            Dict con estructura:
-            {
-                'imagenes': [
-                    {
-                        'ruta_archivo': str,
-                        'descripcion': str,
-                        'puntuacion_similitud': float (0.0-1.0)
-                    },
-                    ...
-                ],
-                'total': int,
-                'descripcion_busqueda': str
-            }
-            
-            O en caso de error:
-            {
-                'error': str,
-                'detalles': str,
-                'imagenes': [],
-                'total': 0
-            }
-        
-        Example:
-            >>> resultado = await busqueda.buscar_imagenes_semanticas(
-            ...     descripcion="Nebulosa roja con estrellas brillantes",
-            ...     top_k=5
-            ... )
-            >>> resultado['imagenes'][0]['puntuacion_similitud']
-            0.85
-        """
-        try:
-            # Validar inputs
-            if not descripcion or not descripcion.strip():
-                return {
-                    'error': "La descripción no puede estar vacía",
-                    'detalles': "",
-                    'imagenes': [],
-                    'total': 0
-                }
-            
-            if top_k <= 0:
-                return {
-                    'error': "top_k debe ser mayor a 0",
-                    'detalles': f"Valor recibido: {top_k}",
-                    'imagenes': [],
-                    'total': 0
-                }
-            
-            # Vectorizar descripción con codificador de texto
-            # (búsqueda cross-modal: texto → imágenes)
-            try:
-                vector_consulta = await self._codificador.codificar_texto(
-                    descripcion.strip()
-                )
-            except Exception as e:
-                return {
-                    'error': "Error al vectorizar descripción",
-                    'detalles': str(e),
-                    'imagenes': [],
-                    'total': 0
-                }
-            
-            # Buscar imágenes similares
-            try:
-                imagenes = await self._repo_documentos.buscar_imagenes_similares(
-                    vector_consulta=vector_consulta,
-                    top_k=top_k
-                )
-            except Exception as e:
-                return {
-                    'error': "Error al buscar imágenes similares",
-                    'detalles': str(e),
-                    'imagenes': [],
-                    'total': 0
-                }
-            
-            # Formatear resultados
-            imagenes_lista = []
-            for imagen in imagenes:
-                imagenes_lista.append({
-                    'ruta_archivo': imagen['ruta_archivo'],
-                    'descripcion': imagen.get('descripcion', ''),
-                    'puntuacion_similitud': round(imagen['similitud'], 4)
-                })
-            
-            return {
-                'imagenes': imagenes_lista,
-                'total': len(imagenes_lista),
-                'descripcion_busqueda': descripcion.strip()
-            }
-        
-        except Exception as e:
-            return {
-                'error': "Error al buscar imágenes semánticamente",
-                'detalles': str(e),
-                'imagenes': [],
-                'total': 0
-            }
-    
-    
     async def encontrar_planetas_similares(
         self,
         id_planeta: int,
@@ -441,13 +180,10 @@ class BusquedaSematica:
                     'total': 0
                 }
             
-            # Buscar planetas similares
+            # Buscar planetas similares por habitabilidad
             try:
-                # Buscar usando chunks_similares pero filtrados para objetos de tipo planeta
-                # Por ahora usamos buscar_chunks_similares como proxy
-                chunks_similares = await self._repo_documentos.buscar_chunks_similares(
-                    vector_consulta=vector_planeta,
-                    top_k=top_k + 1  # +1 para excluir el planeta de referencia
+                todos_planetas = await self._repo_objetos.listar_planetas_por_habitabilidad(
+                    puntaje_minimo=0.0
                 )
             except Exception as e:
                 return {
@@ -458,16 +194,15 @@ class BusquedaSematica:
                     'total': 0
                 }
             
-            # Formatear resultados
-            # TODO: Mejorar para obtener info real de planetas (no solo chunks)
-            # Por ahora retornamos estructura base
+            # Formatear resultados excluyendo el planeta de referencia
             planetas_lista = []
-            for chunk in chunks_similares:
-                # Excluir si es el mismo planeta
-                if chunk['titulo'] != planeta_ref.nombre:
+            for planeta in todos_planetas:
+                if planeta.id_objeto != id_planeta:
                     planetas_lista.append({
-                        'nombre': chunk['titulo'],
-                        'puntuacion_similitud': round(chunk['similitud'], 4)
+                        'id_objeto': planeta.id_objeto,
+                        'nombre': planeta.nombre,
+                        'masa': planeta.masa,
+                        'temperatura': planeta.temperatura
                     })
             
             # Limitar a top_k
@@ -509,47 +244,6 @@ class BusquedaSematica:
             - inputSchema: JSON Schema describiendo los parámetros
         """
         return [
-            Tool(
-                name="buscar_documentos_semanticos",
-                description="Busca documentos científicos por similitud semántica usando embeddings. Retorna chunks de texto ordenados por relevancia.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "consulta": {
-                            "type": "string",
-                            "description": "Pregunta en lenguaje natural (ej: '¿Cómo se forman los agujeros negros?')"
-                        },
-                        "top_k": {
-                            "type": "integer",
-                            "description": "Número máximo de documentos a retornar (default: 5)"
-                        },
-                        "estrategia_chunking": {
-                            "type": "string",
-                            "enum": ["fixed", "sentence", "semantic"],
-                            "description": "Filtrar por estrategia de chunking (opcional)"
-                        }
-                    },
-                    "required": ["consulta"]
-                }
-            ),
-            Tool(
-                name="buscar_imagenes_semanticas",
-                description="Busca imágenes astronómicas usando descripción en texto (búsqueda cross-modal texto→imagen).",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "descripcion": {
-                            "type": "string",
-                            "description": "Descripción textual de la imagen buscada (ej: 'Galaxia espiral azul')"
-                        },
-                        "top_k": {
-                            "type": "integer",
-                            "description": "Número máximo de imágenes a retornar (default: 5)"
-                        }
-                    },
-                    "required": ["descripcion"]
-                }
-            ),
             Tool(
                 name="encontrar_planetas_similares",
                 description="Encuentra planetas similares a uno de referencia en el espacio vectorial de embeddings.",
