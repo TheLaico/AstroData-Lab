@@ -6,25 +6,23 @@ y evaluaciones de habitabilidad planetaria. Las evaluaciones RAGAS miden la fide
 relevancia y recuperación de contexto del sistema RAG.
 """
 
-from pydantic import BaseModel, Field, field_validator, computed_field
+from pydantic import BaseModel, Field, computed_field
 from typing import Optional, Literal
 from datetime import datetime
 
 
-# ============================================================================
 # MODELOS DE EVALUACIÓN RAGAS
-# ============================================================================
 
 class EvaluacionRAGAS(BaseModel):
     """
     Representa una evaluación completa de métricas RAGAS de una consulta RAG.
-    
+
     RAGAS (Retrieval-Augmented Generation Assessment) es un framework para evaluar
     sistemas RAG mediante tres métricas principales:
     - Faithfulness (Fidelidad): qué tan factualmente correcta es la respuesta
     - Answer Relevancy (Relevancia): qué tan bien responde a la pregunta
     - Context Recall (Recuperación): qué tan bien el contexto cubre información necesaria
-    
+
     Se registra en la base de datos con timestamp para rastrear calidad temporal.
     """
     id_evaluacion: int = Field(..., description="Identificador único de la evaluación")
@@ -52,33 +50,12 @@ class EvaluacionRAGAS(BaseModel):
     )
     fecha: datetime = Field(..., description="Fecha y hora de la evaluación")
     id_consulta: int = Field(..., description="Referencia a la consulta evaluada")
-    
-    @field_validator('faithfulness', 'answer_relevancy', 'context_recall', mode='after')
-    @classmethod
-    def validar_metricas(cls, v: float) -> float:
-        """
-        Valida que las métricas RAGAS estén normalizadas entre 0.0 y 1.0.
-        
-        Args:
-            v: Valor de métrica a validar
-            
-        Returns:
-            El valor validado
-            
-        Raises:
-            ValueError: Si el valor está fuera del rango [0.0, 1.0]
-        """
-        if not (0.0 <= v <= 1.0):
-            raise ValueError(
-                f'Las métricas RAGAS deben estar entre 0.0 y 1.0, recibido: {v}'
-            )
-        return v
 
 
 class EvaluacionRAGASEntrada(BaseModel):
     """
     Modelo para recibir nuevas evaluaciones RAGAS del sistema.
-    
+
     Versión simplificada de EvaluacionRAGAS sin id_evaluacion ni fecha.
     Se utiliza para recibir evaluaciones del cliente/evaluador y luego se
     almacena en BD con timestamp y ID asignado por la base de datos.
@@ -106,26 +83,14 @@ class EvaluacionRAGASEntrada(BaseModel):
         description="Nombre del modelo usado para evaluación"
     )
     id_consulta: int = Field(..., description="Referencia a la consulta evaluada")
-    
-    @field_validator('faithfulness', 'answer_relevancy', 'context_recall', mode='after')
-    @classmethod
-    def validar_metricas(cls, v: float) -> float:
-        """Valida que las métricas RAGAS estén normalizadas."""
-        if not (0.0 <= v <= 1.0):
-            raise ValueError(
-                f'Las métricas RAGAS deben estar entre 0.0 y 1.0, recibido: {v}'
-            )
-        return v
 
 
-# ============================================================================
 # MODELO DE EVALUACIÓN DE HABITABILIDAD
-# ============================================================================
 
 class EvaluacionHabitabilidad(BaseModel):
     """
     Representa una evaluación de potencial de habitabilidad de un planeta.
-    
+
     Realiza un análisis integral del potencial de un planeta para albergar vida
     basándose en factores como temperatura, presión, composición atmosférica,
     radiación solar y otras características ambientales críticas.
@@ -143,49 +108,26 @@ class EvaluacionHabitabilidad(BaseModel):
         description="Análisis detallado de factores de habitabilidad"
     )
     fecha: datetime = Field(..., description="Fecha y hora de la evaluación")
-    
-    @field_validator('puntaje', mode='after')
-    @classmethod
-    def validar_puntaje(cls, v: float) -> float:
-        """
-        Valida que el puntaje de habitabilidad esté entre 0.0 y 1.0.
-        
-        Args:
-            v: Valor de puntaje a validar
-            
-        Returns:
-            El valor validado
-            
-        Raises:
-            ValueError: Si el valor está fuera del rango [0.0, 1.0]
-        """
-        if not (0.0 <= v <= 1.0):
-            raise ValueError(
-                f'El puntaje de habitabilidad debe estar entre 0.0 y 1.0, recibido: {v}'
-            )
-        return v
 
 
-# ============================================================================
 # MODELO AUXILIAR DE RESUMEN DE EVALUACIÓN
-# ============================================================================
 
 class ResumenEvaluacion(BaseModel):
     """
     Resumen analítico de una evaluación RAGAS con métricas agregadas.
-    
+
     Proporciona un análisis de alto nivel de la evaluación RAGAS, incluyendo
     el promedio de las tres métricas principales y una clasificación de calidad
     derivada que facilita la interpretación rápida por usuarios y sistemas.
     """
     evaluacion: EvaluacionRAGAS = Field(..., description="Evaluación RAGAS completa")
-    
+
     @computed_field  # type: ignore[misc]
     @property
     def promedio_metricas(self) -> float:
         """
         Calcula el promedio de las tres métricas RAGAS.
-        
+
         Returns:
             Promedio aritmético de faithfulness, answer_relevancy y context_recall
         """
@@ -194,23 +136,23 @@ class ResumenEvaluacion(BaseModel):
             + self.evaluacion.answer_relevancy
             + self.evaluacion.context_recall
         ) / 3.0
-    
+
     @computed_field  # type: ignore[misc]
     @property
     def calidad(self) -> Literal['baja', 'media', 'alta']:
         """
         Clasifica la calidad general de la evaluación RAGAS.
-        
+
         Basada en el promedio de las tres métricas:
         - 'baja': promedio < 0.4
         - 'media': promedio entre 0.4 y 0.7
         - 'alta': promedio > 0.7
-        
+
         Returns:
             Clasificación de calidad ('baja', 'media' o 'alta')
         """
         promedio = self.promedio_metricas
-        
+
         if promedio < 0.4:
             return 'baja'
         elif promedio <= 0.7:

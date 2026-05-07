@@ -10,14 +10,12 @@ from typing import Optional, List
 from datetime import datetime
 
 
-# ============================================================================
 # MODELO DE USUARIO
-# ============================================================================
 
 class Usuario(BaseModel):
     """
     Representa un usuario registrado en AstroData Lab.
-    
+
     Almacena información identificativa del usuario: identificador único,
     nombre, correo electrónico y fecha de registro en el sistema.
     """
@@ -28,19 +26,19 @@ class Usuario(BaseModel):
         None,
         description="Fecha y hora en que el usuario se registró en el sistema"
     )
-    
+
     @field_validator('correo')
     @classmethod
     def validar_correo(cls, v: str) -> str:
         """
-        Valida que el correo contenga un símbolo @ básico.
-        
+        Valida que el correo contenga un símbolo @ y un punto.
+
         Args:
             v: Valor del correo a validar
-            
+
         Returns:
             El correo validado
-            
+
         Raises:
             ValueError: Si el formato de correo es inválido
         """
@@ -49,14 +47,12 @@ class Usuario(BaseModel):
         return v
 
 
-# ============================================================================
 # MODELOS DE CONSULTA
-# ============================================================================
 
 class ConsultaEntrada(BaseModel):
     """
     Modelo para recibir nuevas consultas del usuario.
-    
+
     Representa los datos mínimos necesarios cuando un usuario realiza una consulta
     al sistema RAG. Se valida antes de procesarse y guardarse en la base de datos.
     """
@@ -66,19 +62,19 @@ class ConsultaEntrada(BaseModel):
         description="Texto de la pregunta o consulta del usuario (mínimo 3 caracteres)"
     )
     id_usuario: int = Field(..., description="Identificador del usuario que realiza la consulta")
-    
+
     @field_validator('texto_pregunta')
     @classmethod
     def validar_texto_pregunta(cls, v: str) -> str:
         """
         Valida que la pregunta no esté vacía y contenga contenido significativo.
-        
+
         Args:
             v: Texto de la pregunta a validar
-            
+
         Returns:
             El texto validado sin espacios en blanco extras
-            
+
         Raises:
             ValueError: Si el texto es vacío o solo contiene espacios
         """
@@ -91,7 +87,7 @@ class ConsultaEntrada(BaseModel):
 class Consulta(BaseModel):
     """
     Representa una consulta registrada en la base de datos.
-    
+
     Contiene el registro completo de una consulta realizada por un usuario,
     incluyendo identificadores únicos, timestamp de ejecución y datos del usuario.
     Se genera cuando ConsultaEntrada se procesa y almacena en PostgreSQL.
@@ -102,14 +98,12 @@ class Consulta(BaseModel):
     id_usuario: int = Field(..., description="Identificador del usuario que realizó la consulta")
 
 
-# ============================================================================
 # MODELO DE EMBEDDING DE CONSULTA
-# ============================================================================
 
 class EmbeddingConsulta(BaseModel):
     """
     Representa el vector embedding generado a partir de una consulta de texto.
-    
+
     Almacena el embedding numérico de una consulta en pgvector de PostgreSQL.
     Este vector se utiliza para búsqueda semántica similar en la base de datos
     vectorial contra documentos y objetos astronómicos.
@@ -124,24 +118,24 @@ class EmbeddingConsulta(BaseModel):
         ...,
         description="Nombre del modelo de embedding usado para generar el vector"
     )
-    
+
     @field_validator('vector')
     @classmethod
     def validar_vector(cls, v: List[float]) -> List[float]:
         """
-        Valida que el vector no esté vacío y contenga valores numéricos válidos.
-        
+        Valida que el vector no esté vacío y tenga dimensiones mínimas razonables.
+
         Args:
             v: Lista de valores del vector a validar
-            
+
         Returns:
             El vector validado
-            
+
         Raises:
-            ValueError: Si el vector está vacío o contiene valores inválidos
+            ValueError: Si el vector está vacío o tiene menos de 10 dimensiones
         """
         if not v:
             raise ValueError('El vector no puede estar vacío')
-        if len(v) < 10:  # Mínimo razonable para un embedding
+        if len(v) < 10:
             raise ValueError('El vector debe tener al menos 10 dimensiones')
         return v
