@@ -80,6 +80,126 @@ class GestionObjetos:
         self._repo_documentos = RepositorioDocumentos()
     
     
+    async def _crear_por_tipo(
+        self,
+        tipo: str,
+        nombre: str,
+        descripcion_cientifica: str,
+        atributos: dict
+    ):
+        """
+        Crea el objeto base en Objeto_Astronomico y luego inserta
+        en la tabla específica del tipo (Planeta, Estrella, etc.).
+
+        Retorna el objeto creado o un dict con 'error' si fallan las validaciones.
+        """
+        # ── Planeta ────────────────────────────────────────────────────────
+        if tipo == "planeta":
+            id_sistema = atributos.get("id_sistema")
+            if id_sistema is None:
+                return {
+                    "error": "Falta atributo requerido: id_sistema",
+                    "detalles": "Un planeta debe pertenecer a un sistema estelar existente."
+                }
+            objeto_base = await self._repo_objetos.crear_objeto(
+                nombre=nombre,
+                descripcion=descripcion_cientifica
+            )
+            planeta = Planeta(
+                id_objeto=objeto_base.id_objeto,
+                nombre=objeto_base.nombre,
+                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_tipo_planeta=atributos.get("id_tipo_planeta", 1),
+                id_sistema=int(id_sistema),
+                masa=float(atributos.get("masa", atributos.get("masa_masas_terrestres", 1.0))),
+                temperatura=int(atributos.get("temperatura", atributos.get("temperatura_K", 288)))
+            )
+            return await self._repo_objetos.crear_planeta(planeta)
+
+        # ── Estrella ───────────────────────────────────────────────────────
+        elif tipo == "estrella":
+            id_sistema = atributos.get("id_sistema")
+            if id_sistema is None:
+                return {
+                    "error": "Falta atributo requerido: id_sistema",
+                    "detalles": "Una estrella debe pertenecer a un sistema estelar existente."
+                }
+            objeto_base = await self._repo_objetos.crear_objeto(
+                nombre=nombre,
+                descripcion=descripcion_cientifica
+            )
+            estrella = Estrella(
+                id_objeto=objeto_base.id_objeto,
+                nombre=objeto_base.nombre,
+                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_tipo_estrella=atributos.get("id_tipo_estrella", 1),
+                id_sistema=int(id_sistema),
+                masa=float(atributos.get("masa", 1.0)),
+                temperatura=float(atributos.get("temperatura", atributos.get("temperatura_K", 5778.0)))
+            )
+            return await self._repo_objetos.crear_estrella(estrella)
+
+        # ── Sistema Estelar ────────────────────────────────────────────────
+        elif tipo == "sistema_estelar":
+            id_galaxia = atributos.get("id_galaxia")
+            if id_galaxia is None:
+                return {
+                    "error": "Falta atributo requerido: id_galaxia",
+                    "detalles": "Un sistema estelar debe pertenecer a una galaxia existente."
+                }
+            objeto_base = await self._repo_objetos.crear_objeto(
+                nombre=nombre,
+                descripcion=descripcion_cientifica
+            )
+            sistema = SistemaEstelar(
+                id_objeto=objeto_base.id_objeto,
+                nombre=objeto_base.nombre,
+                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_galaxia=int(id_galaxia)
+            )
+            return await self._repo_objetos.crear_sistema_estelar(sistema)
+
+        # ── Galaxia ────────────────────────────────────────────────────────
+        elif tipo == "galaxia":
+            objeto_base = await self._repo_objetos.crear_objeto(
+                nombre=nombre,
+                descripcion=descripcion_cientifica
+            )
+            galaxia = Galaxia(
+                id_objeto=objeto_base.id_objeto,
+                nombre=objeto_base.nombre,
+                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_tipo_galaxia=atributos.get("id_tipo_galaxia", 1),
+                distancia=float(atributos.get("distancia", 0.0))
+            )
+            return await self._repo_objetos.crear_galaxia(galaxia)
+
+        # ── Luna ───────────────────────────────────────────────────────────
+        elif tipo == "luna":
+            id_planeta = atributos.get("id_planeta")
+            if id_planeta is None:
+                return {
+                    "error": "Falta atributo requerido: id_planeta",
+                    "detalles": "Una luna debe orbitar un planeta existente."
+                }
+            objeto_base = await self._repo_objetos.crear_objeto(
+                nombre=nombre,
+                descripcion=descripcion_cientifica
+            )
+            luna = Luna(
+                id_objeto=objeto_base.id_objeto,
+                nombre=objeto_base.nombre,
+                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_planeta=int(id_planeta),
+                radio=float(atributos.get("radio", 0.0))
+            )
+            return await self._repo_objetos.crear_luna(luna)
+
+        return {
+            "error": f"Tipo no soportado: {tipo}",
+            "detalles": ""
+        }
+
     async def crear_objeto_astronomico(
         self,
         nombre: str,
@@ -163,25 +283,28 @@ class GestionObjetos:
                     'detalles': ""
                 }
             
-            # 3. Crear objeto base en Objeto_Astronomico
-            objeto = await self._repo_objetos.crear_objeto(
+            # 3. Insertar en la tabla específica del tipo
+            objeto = await self._crear_por_tipo(
+                tipo=tipo,
                 nombre=nombre.strip(),
-                descripcion=descripcion_cientifica.strip()
+                descripcion_cientifica=descripcion_cientifica.strip(),
+                atributos=atributos
             )
-            
+
+            if isinstance(objeto, dict) and 'error' in objeto:
+                return objeto
+
             # 4. Vectorizar descripción para embeddings (para uso futuro)
             try:
                 vector = await self._codificador.codificar_texto(
                     descripcion_cientifica.strip()
                 )
                 embedding_generado = True
-            except Exception as e:
+            except Exception:
                 vector = None
                 embedding_generado = False
-            
-            # Nota: los embeddings se almacenarían en una tabla dedicada cuando esté disponible
-            
-            # 6. Retornar respuesta
+
+            # 5. Retornar respuesta
             return {
                 'id_objeto': objeto.id_objeto,
                 'nombre': objeto.nombre,

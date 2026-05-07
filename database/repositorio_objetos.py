@@ -369,6 +369,136 @@ class RepositorioObjetos:
                 f"Error al crear planeta '{datos.nombre}': {e}"
             ) from e
     
+    async def crear_galaxia(self, datos: Galaxia) -> Galaxia:
+        """Crea una nueva galaxia en Objeto_Astronomico y Galaxia."""
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                id_objeto = await conexion.fetchval(
+                    """
+                    INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+                    VALUES ($1, $2)
+                    RETURNING id_objeto
+                    """,
+                    datos.nombre.strip(),
+                    datos.descripcion_cientifica.strip() if datos.descripcion_cientifica else None
+                )
+                await conexion.execute(
+                    """
+                    INSERT INTO Galaxia (id_objeto, id_tipo_galaxia, distancia)
+                    VALUES ($1, $2, $3)
+                    """,
+                    id_objeto,
+                    datos.id_tipo_galaxia,
+                    datos.distancia
+                )
+                return Galaxia(
+                    id_objeto=id_objeto,
+                    nombre=datos.nombre,
+                    descripcion_cientifica=datos.descripcion_cientifica,
+                    id_tipo_galaxia=datos.id_tipo_galaxia,
+                    distancia=datos.distancia
+                )
+        except Exception as e:
+            raise RuntimeError(f"Error al crear galaxia '{datos.nombre}': {e}") from e
+
+    async def crear_sistema_estelar(self, datos: SistemaEstelar) -> SistemaEstelar:
+        """Crea un nuevo sistema estelar en Objeto_Astronomico y Sistema_Estelar."""
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                id_objeto = await conexion.fetchval(
+                    """
+                    INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+                    VALUES ($1, $2)
+                    RETURNING id_objeto
+                    """,
+                    datos.nombre.strip(),
+                    datos.descripcion_cientifica.strip() if datos.descripcion_cientifica else None
+                )
+                await conexion.execute(
+                    """
+                    INSERT INTO Sistema_Estelar (id_objeto, id_galaxia)
+                    VALUES ($1, $2)
+                    """,
+                    id_objeto,
+                    datos.id_galaxia
+                )
+                return SistemaEstelar(
+                    id_objeto=id_objeto,
+                    nombre=datos.nombre,
+                    descripcion_cientifica=datos.descripcion_cientifica,
+                    id_galaxia=datos.id_galaxia
+                )
+        except Exception as e:
+            raise RuntimeError(f"Error al crear sistema estelar '{datos.nombre}': {e}") from e
+
+    async def crear_estrella(self, datos: Estrella) -> Estrella:
+        """Crea una nueva estrella en Objeto_Astronomico y Estrella."""
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                id_objeto = await conexion.fetchval(
+                    """
+                    INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+                    VALUES ($1, $2)
+                    RETURNING id_objeto
+                    """,
+                    datos.nombre.strip(),
+                    datos.descripcion_cientifica.strip() if datos.descripcion_cientifica else None
+                )
+                await conexion.execute(
+                    """
+                    INSERT INTO Estrella (id_objeto, id_tipo_estrella, id_sistema, masa, temperatura)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    id_objeto,
+                    datos.id_tipo_estrella,
+                    datos.id_sistema,
+                    datos.masa,
+                    datos.temperatura
+                )
+                return Estrella(
+                    id_objeto=id_objeto,
+                    nombre=datos.nombre,
+                    descripcion_cientifica=datos.descripcion_cientifica,
+                    id_tipo_estrella=datos.id_tipo_estrella,
+                    id_sistema=datos.id_sistema,
+                    masa=datos.masa,
+                    temperatura=datos.temperatura
+                )
+        except Exception as e:
+            raise RuntimeError(f"Error al crear estrella '{datos.nombre}': {e}") from e
+
+    async def crear_luna(self, datos: Luna) -> Luna:
+        """Crea una nueva luna en Objeto_Astronomico y Luna."""
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                id_objeto = await conexion.fetchval(
+                    """
+                    INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+                    VALUES ($1, $2)
+                    RETURNING id_objeto
+                    """,
+                    datos.nombre.strip(),
+                    datos.descripcion_cientifica.strip() if datos.descripcion_cientifica else None
+                )
+                await conexion.execute(
+                    """
+                    INSERT INTO Luna (id_objeto, id_planeta, radio)
+                    VALUES ($1, $2, $3)
+                    """,
+                    id_objeto,
+                    datos.id_planeta,
+                    datos.radio
+                )
+                return Luna(
+                    id_objeto=id_objeto,
+                    nombre=datos.nombre,
+                    descripcion_cientifica=datos.descripcion_cientifica,
+                    id_planeta=datos.id_planeta,
+                    radio=datos.radio
+                )
+        except Exception as e:
+            raise RuntimeError(f"Error al crear luna '{datos.nombre}': {e}") from e
+
     async def listar_planetas_por_habitabilidad(
         self,
         puntaje_minimo: float = 0.0
