@@ -11,7 +11,6 @@ sin implementar lógica de búsqueda o persistencia directa.
 """
 
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 from mcp.types import Tool, TextContent
 
 from database.repositorio_consultas import RepositorioConsultas
@@ -44,7 +43,7 @@ class ToolsConsultaRAG:
         _repo_documentos: Repositorio para gestionar documentos y embeddings
         _repo_objetos: Repositorio para gestionar objetos astronómicos
     """
-    
+
     def __init__(self, codificador: CodificadorBase) -> None:
         """
         Inicializa las herramientas RAG con sus dependencias.
@@ -60,12 +59,12 @@ class ToolsConsultaRAG:
             raise TypeError(
                 "codificador debe implementar la interfaz CodificadorBase"
             )
-        
+
         self._codificador = codificador
         self._repo_consultas = RepositorioConsultas()
         self._repo_documentos = RepositorioDocumentos()
         self._repo_objetos = RepositorioObjetos()
-    
+
     async def rag_query(
         self,
         texto_pregunta: str,
@@ -77,11 +76,11 @@ class ToolsConsultaRAG:
         
         Pipeline:
         1. Registra la consulta en BD (tabla Consulta)
-        2. Vectoriza el texto con CodificadorTexto → 384 dimensiones
+        2. Vectoriza el texto con CodificadorBase → embedding numérico
         3. Guarda embedding en BD (tabla Embedding_Consulta)
-        4. Busca similitud coseno contra Embedding_Texto
-        5. Recupera chunks relevantes con títulos y puntuaciones
-        6. Concatena contexto para usarlo en prompt de Claude
+        4. Busca similitud coseno contra Embedding_Texto con buscar_chunks_similares
+        5. Construye contexto_para_claude concatenando el contenido de los chunks
+        6. Retorna chunks recuperados y contexto listo para el prompt
         
         Args:
             texto_pregunta: Pregunta del usuario en lenguaje natural
@@ -97,19 +96,22 @@ class ToolsConsultaRAG:
                 'texto_pregunta': str,
                 'chunks_recuperados': [
                     {
+                        'id_doc': int,
                         'titulo': str,
                         'chunk_id': int,
                         'estrategia': str,
-                        'similitud': float (0.0-1.0)
+                        'similitud': float,  # 0.0-1.0
+                        'contenido': str | None
                     },
                     ...
                 ],
-                'contexto_para_claude': str  # Texto concatenado de chunks
+                'contexto_para_claude': str,  # Texto concatenado de los chunks
+                'fecha_consulta': str         # ISO 8601
             }
             
             En caso de error:
             {
-                'error': str,  # Mensaje descriptivo en español
+                'error': str,    # Mensaje descriptivo en español
                 'detalles': str  # Información técnica adicional
             }
         
@@ -124,77 +126,77 @@ class ToolsConsultaRAG:
             ...     estrategia_chunking='sentence'
             ... )
             >>> resultado['contexto_para_claude']
-            "Marte es... Luna de Marte..."
+            "### Observaciones de Marte (chunk 0)\nMarte es..."
         """
         try:
-            # Validar entrada
+            # --- Validación de entrada ---
             if not texto_pregunta or not texto_pregunta.strip():
                 return {
                     'error': 'La pregunta no puede estar vacía',
                     'detalles': 'Se requiere un texto_pregunta válido'
                 }
-            
+
             if top_k <= 0:
                 return {
                     'error': 'top_k debe ser positivo',
                     'detalles': f'Recibido: {top_k}'
                 }
-            
+
             # TODO: Obtener id_usuario desde contexto de Claude (por ahora usar 1 temporal)
             id_usuario_temporal = 1
-            
+
             # 1. Registrar consulta en BD
             entrada_consulta = ConsultaEntrada(
                 texto_pregunta=texto_pregunta.strip(),
                 id_usuario=id_usuario_temporal
             )
             consulta = await self._repo_consultas.registrar_consulta(entrada_consulta)
-            
-            # 2. Vectorizar pregunta
-            vector_embedding = await self._codificador.codificar_texto(texto_pregunta)
-            
-            # 3. Buscar documentos relevantes por objeto astronómico
-            # Se buscan documentos relacionados y se construye contexto
-            documentos_recientes = []
-            try:
-                # Obtener documentos más recientes como contexto base
-                async with __import__('database.conexion', fromlist=['conexion_bd']).conexion_bd.obtener_conexion() as conexion:
-                    filas = await conexion.fetch(
-                        """
-                        SELECT id_doc, titulo, fuente, contenido_texto
-                        FROM Documento
-                        ORDER BY fecha DESC NULLS LAST
-                        LIMIT $1
-                        """,
-                        top_k
-                    )
-                    documentos_recientes = [dict(f) for f in filas]
-            except Exception:
-                documentos_recientes = []
-            
-            # 4. Construir contexto para Claude
-            contexto_partes = []
-            for doc in documentos_recientes:
-                contexto_partes.append(
-                    f"[{doc['titulo']}]"
-                )
-            contexto_para_claude = "\n".join(contexto_partes)
-            
-            # 5. Retornar resultado
+
+            # 2. Vectorizar la pregunta
+            vector_embedding = await self._codificador.codificar_texto(
+                texto_pregunta.strip()
+            )
+
+            # 3. Guardar embedding de la consulta en BD
+            await self._repo_consultas.guardar_embedding_consulta(
+                id_consulta=consulta.id_consulta,
+                vector=vector_embedding,
+                modelo=self._codificador.nombre_modelo
+            )
+
+            # 4. Buscar chunks similares por similitud coseno
+            chunks = await self._repo_documentos.buscar_chunks_similares(
+                vector_consulta=vector_embedding,
+                top_k=top_k,
+                estrategia_chunking=estrategia_chunking
+            )
+
+            # 5. Construir contexto para Claude concatenando el contenido de los chunks.
+            #    Cada chunk se encabeza con el título del documento y su índice para que
+            #    Claude pueda citar la fuente con precisión.
+            partes_contexto = []
+            for chunk in chunks:
+                encabezado = f"### {chunk['titulo']} (chunk {chunk['chunk_id']})"
+                contenido = chunk.get('contenido') or ''
+                partes_contexto.append(f"{encabezado}\n{contenido}".strip())
+
+            contexto_para_claude = "\n\n".join(partes_contexto)
+
+            # 6. Retornar resultado
             return {
                 'id_consulta': consulta.id_consulta,
                 'texto_pregunta': consulta.texto_pregunta,
-                'documentos_recuperados': documentos_recientes,
+                'chunks_recuperados': chunks,
                 'contexto_para_claude': contexto_para_claude,
                 'fecha_consulta': consulta.fecha.isoformat()
             }
-        
+
         except Exception as e:
             return {
                 'error': 'Error al procesar consulta RAG',
                 'detalles': str(e)
             }
-    
+
     async def obtener_contexto_objeto(
         self,
         id_objeto: Optional[int] = None,
@@ -221,8 +223,7 @@ class ToolsConsultaRAG:
                 'objeto': {
                     'id_objeto': int,
                     'nombre': str,
-                    'descripcion_cientifica': str,
-                    'tipo': str  # Inferido: 'galaxia', 'sistema', 'estrella', 'planeta', 'luna'
+                    'descripcion_cientifica': str
                 },
                 'documentos': [
                     {
@@ -230,22 +231,14 @@ class ToolsConsultaRAG:
                         'titulo': str,
                         'fuente': str,
                         'idioma': str,
-                        'fecha': str (ISO)
+                        'fecha': str (ISO) | None
                     },
                     ...
                 ],
-                'caracteristicas_ambientales': [  # Si es planeta
+                'caracteristicas_ambientales': [  # Lista vacía si no es planeta
                     {
                         'tipo': str,
                         'valor': str
-                    },
-                    ...
-                ],
-                'evaluaciones_habitabilidad': [  # Si es planeta
-                    {
-                        'puntaje': float,
-                        'descripcion': str,
-                        'fecha': str (ISO)
                     },
                     ...
                 ]
@@ -253,7 +246,7 @@ class ToolsConsultaRAG:
             
             En caso de error:
             {
-                'error': str,  # Mensaje descriptivo en español
+                'error': str,    # Mensaje descriptivo en español
                 'detalles': str  # Información técnica
             }
         
@@ -278,25 +271,25 @@ class ToolsConsultaRAG:
                     'error': 'Se debe proporcionar id_objeto o nombre',
                     'detalles': 'Al menos uno de los parámetros es obligatorio'
                 }
-            
+
             # Obtener objeto
             objeto = None
             if id_objeto:
                 objeto = await self._repo_objetos.obtener_objeto_por_id(id_objeto)
             elif nombre:
                 objeto = await self._repo_objetos.obtener_objeto_por_nombre(nombre)
-            
+
             if not objeto:
                 return {
                     'error': 'Objeto astronómico no encontrado',
                     'detalles': f'id={id_objeto}, nombre={nombre}'
                 }
-            
-            # Obtener documentos
+
+            # Obtener documentos asociados al objeto
             documentos = await self._repo_documentos.listar_documentos_por_objeto(
                 objeto.id_objeto
             )
-            
+
             docs_simplificados = [
                 {
                     'id_doc': d.id_doc,
@@ -307,7 +300,7 @@ class ToolsConsultaRAG:
                 }
                 for d in documentos
             ]
-            
+
             # Construir respuesta base
             respuesta: Dict[str, Any] = {
                 'objeto': {
@@ -315,10 +308,11 @@ class ToolsConsultaRAG:
                     'nombre': objeto.nombre,
                     'descripcion_cientifica': objeto.descripcion_cientifica
                 },
-                'documentos': docs_simplificados
+                'documentos': docs_simplificados,
+                'caracteristicas_ambientales': []
             }
-            
-            # Si es planeta, agregar características y evaluaciones
+
+            # Si es planeta, intentar agregar características ambientales
             try:
                 caracteristicas = await self._repo_objetos.obtener_caracteristicas_ambientales(
                     objeto.id_objeto
@@ -330,18 +324,18 @@ class ToolsConsultaRAG:
                     }
                     for c in caracteristicas
                 ]
-            except:
-                # No es planeta o no tiene características
-                respuesta['caracteristicas_ambientales'] = []
-            
+            except Exception:
+                # El objeto no es un planeta o no tiene características registradas
+                pass
+
             return respuesta
-        
+
         except Exception as e:
             return {
                 'error': 'Error al obtener contexto del objeto',
                 'detalles': str(e)
             }
-    
+
     def obtener_definiciones_tools(self) -> List[Tool]:
         """
         Retorna las definiciones de las tools en formato MCP.
@@ -350,13 +344,16 @@ class ToolsConsultaRAG:
         inicialización. Cada tool incluye nombre, descripción e inputs.
         
         Returns:
-            Lista de Tool (formato MCP) con definiciones de rag_query y obtener_contexto_objeto
+            Lista de Tool (formato MCP) con definiciones de rag_query
+            y obtener_contexto_objeto
         """
         return [
             Tool(
                 name="rag_query",
-                description="Realiza una consulta RAG recuperando documentos similares de la BD semántica. "
-                           "Vectoriza la pregunta y busca chunks de texto con mayor similitud coseno.",
+                description=(
+                    "Realiza una consulta RAG recuperando documentos similares de la BD semántica. "
+                    "Vectoriza la pregunta y busca chunks de texto con mayor similitud coseno."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -380,8 +377,10 @@ class ToolsConsultaRAG:
             ),
             Tool(
                 name="obtener_contexto_objeto",
-                description="Recupera contexto científico completo de un objeto astronómico. "
-                           "Retorna el objeto, documentos asociados, características y evaluaciones.",
+                description=(
+                    "Recupera contexto científico completo de un objeto astronómico. "
+                    "Retorna el objeto, documentos asociados, características y evaluaciones."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
