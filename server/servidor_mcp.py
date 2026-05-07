@@ -22,8 +22,12 @@ import asyncio
 import signal
 import sys
 import time
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Callable, Optional
+
+# Agregar el directorio raíz al path para importar módulos locales
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # MCP SDK
 from mcp.server import Server
