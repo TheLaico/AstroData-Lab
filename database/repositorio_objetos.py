@@ -16,9 +16,8 @@ from models.objeto_astronomico import (
     Planeta,
     Luna,
     CaracteristicaAmbiental,
-    EvaluacionHabitabilidad,
 )
-
+from models.evaluacion import EvaluacionHabitabilidad
 
 class RepositorioObjetos:
     """
