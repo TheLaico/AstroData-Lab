@@ -7,7 +7,7 @@ a Claude Desktop. Orquesta:
 1. Inicialización de la base de datos (PostgreSQL + pgvector)
 2. Instanciación de codificadores de embeddings (texto e imagen)
 3. Inyección de dependencias en herramientas (DIP)
-4. Registro de todas las herramientas MCP (ISP)
+4. Registro dinámico de todas las herramientas MCP (OCP)
 5. Manejo de cierre limpio con señales del sistema (SIGINT, SIGTERM)
 
 Implementa el patrón de Inversión de Control (IoC) para gestionar el ciclo
@@ -47,6 +47,113 @@ from tools.consulta_rag import ToolsConsultaRAG
 from tools.gestion_objetos import GestionObjetos
 from tools.busqueda_semantica import BusquedaSematica
 from tools.evaluacion_ragas import ToolsEvaluacionRAGAS
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTRATO: interfaz que toda clase de tools debe implementar
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ToolGroup:
+    """
+    Clase base que toda clase de herramientas MCP debe extender.
+
+    Contrato:
+        - obtener_definiciones_tools() → List[Tool]
+            Retorna las definiciones de las tools que gestiona este grupo.
+        - ejecutar(nombre_tool, argumentos) → Any
+            Despacha la llamada a la herramienta correcta internamente.
+            El servidor solo llama a este método; no necesita conocer qué
+            tools existen dentro del grupo.
+
+    Al agregar un grupo nuevo basta con:
+        1. Extender ToolGroup en la clase de tools.
+        2. Añadir la instancia a la lista en _inicializar_herramientas.
+    El servidor no requiere ningún otro cambio (OCP).
+    """
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        raise NotImplementedError
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        raise NotImplementedError(
+            f"{self.__class__.__name__} no implementa ejecutar()"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADAPTADORES: envuelven las clases existentes sin modificarlas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class GrupoConsultaRAG(ToolGroup):
+    """Adaptador que expone ToolsConsultaRAG como ToolGroup."""
+
+    def __init__(self, tools: ToolsConsultaRAG) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "rag_query":
+            return await self._tools.rag_query(**argumentos)
+        if nombre_tool == "obtener_contexto_objeto":
+            return await self._tools.obtener_contexto_objeto(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoConsultaRAG: {nombre_tool}'}
+
+
+class GrupoGestionObjetos(ToolGroup):
+    """Adaptador que expone GestionObjetos como ToolGroup."""
+
+    def __init__(self, tools: GestionObjetos) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "crear_objeto_astronomico":
+            return await self._tools.crear_objeto_astronomico(**argumentos)
+        if nombre_tool == "obtener_objeto_astronomico":
+            return await self._tools.obtener_objeto_astronomico(**argumentos)
+        if nombre_tool == "actualizar_objeto_astronomico":
+            return await self._tools.actualizar_objeto_astronomico(**argumentos)
+        if nombre_tool == "eliminar_objeto_astronomico":
+            return await self._tools.eliminar_objeto_astronomico(**argumentos)
+        if nombre_tool == "listar_planetas_habitables":
+            return await self._tools.listar_planetas_habitables(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoGestionObjetos: {nombre_tool}'}
+
+
+class GrupoBusquedaSemantica(ToolGroup):
+    """Adaptador que expone BusquedaSematica como ToolGroup."""
+
+    def __init__(self, tools: BusquedaSematica) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "encontrar_planetas_similares":
+            return await self._tools.encontrar_planetas_similares(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoBusquedaSemantica: {nombre_tool}'}
+
+
+class GrupoEvaluacionRAGAS(ToolGroup):
+    """Adaptador que expone ToolsEvaluacionRAGAS como ToolGroup."""
+
+    def __init__(self, tools: ToolsEvaluacionRAGAS) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "evaluar_respuesta_rag":
+            return await self._tools.evaluar_respuesta_rag(**argumentos)
+        if nombre_tool == "obtener_historial_evaluaciones":
+            return await self._tools.obtener_historial_evaluaciones(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoEvaluacionRAGAS: {nombre_tool}'}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,7 +199,7 @@ def _pad(text: str, width: int) -> str:
 
 def banner() -> None:
     """Imprime el banner de inicio del servidor."""
-    w = WIDTH + 2  # con los bordes │
+    w = WIDTH + 2
     top    = f"╔{'═' * w}╗"
     bottom = f"╚{'═' * w}╝"
     mid    = f"╠{'═' * w}╣"
@@ -157,16 +264,16 @@ def tabla_tools(tools: list) -> None:
     print(f"  {C.DIM}{'─' * 40}{'─' * 20}{C.RESET}", file=sys.stderr)
 
     grupos = {
-        "rag_query":                    "Consulta RAG",
-        "obtener_contexto_objeto":      "Consulta RAG",
-        "crear_objeto_astronomico":     "Gestión",
-        "obtener_objeto_astronomico":   "Gestión",
-        "actualizar_objeto_astronomico":"Gestión",
-        "eliminar_objeto_astronomico":  "Gestión",
-        "listar_planetas_habitables":   "Gestión",
-        "encontrar_planetas_similares": "Búsqueda",
-        "evaluar_respuesta_rag":        "Evaluación",
-        "obtener_historial_evaluaciones":"Evaluación",
+        "rag_query":                     "Consulta RAG",
+        "obtener_contexto_objeto":       "Consulta RAG",
+        "crear_objeto_astronomico":      "Gestión",
+        "obtener_objeto_astronomico":    "Gestión",
+        "actualizar_objeto_astronomico": "Gestión",
+        "eliminar_objeto_astronomico":   "Gestión",
+        "listar_planetas_habitables":    "Gestión",
+        "encontrar_planetas_similares":  "Búsqueda",
+        "evaluar_respuesta_rag":         "Evaluación",
+        "obtener_historial_evaluaciones": "Evaluación",
     }
 
     colores_grupo = {
@@ -236,7 +343,7 @@ def panel_cierre(duracion: float) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOGGING: formato minimalista que aprovecha los helpers de consola
+# LOGGING
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ConsolaHandler(logging.Handler):
@@ -249,12 +356,9 @@ class ConsolaHandler(logging.Handler):
             err(msg)
         elif level >= logging.WARNING:
             warn(msg)
-        else:
-            # INFO y DEBUG los omitimos porque ya usamos los helpers directamente
-            pass
+        # INFO y DEBUG los omitimos; ya usamos los helpers directamente
 
 
-# Silenciar el logger raíz para evitar duplicados
 logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -269,21 +373,29 @@ logger.propagate = False
 class ServidorMCPAstroData:
     """
     Servidor MCP principal que expone herramientas de AstroData Lab a Claude.
+
+    El registro de tools es completamente dinámico: _registrar_tools itera
+    sobre self._grupos (lista de ToolGroup) y construye el mapa nombre→grupo
+    sin ningún if/elif. Para agregar un grupo nuevo solo hay que:
+        1. Crear un adaptador que extienda ToolGroup.
+        2. Añadir la instancia a self._grupos en _inicializar_herramientas.
+    El resto del servidor no cambia.
     """
 
     def __init__(self) -> None:
         self.servidor = Server("AstroData-Lab")
-        self.activo = False
+        self.activo   = False
         self._inicio: float = 0.0
 
-        self.tools_rag: ToolsConsultaRAG         = None
-        self.gestion_objetos: GestionObjetos      = None
-        self.busqueda_semantica: BusquedaSematica = None
-        self.evaluacion_ragas: ToolsEvaluacionRAGAS = None
+        # Lista de grupos de tools; el servidor itera sobre ella sin conocer
+        # el contenido de cada grupo.
+        self._grupos: list[ToolGroup] = []
 
-        self._handlers: Dict[str, Callable] = {}
-        self._tool_defs: list[Tool] = []
+        # Mapa plano nombre_tool → grupo, construido en _registrar_tools
+        self._mapa_tools: Dict[str, ToolGroup] = {}
+        self._tool_defs:  list[Tool]           = []
 
+    # ── Inicialización ────────────────────────────────────────────────────────
 
     async def _inicializar_base_datos(self) -> None:
         seccion("Base de datos")
@@ -295,63 +407,86 @@ class ServidorMCPAstroData:
             err(f"Error al inicializar BD: {e}")
             raise
 
-
     async def _inicializar_codificadores(self) -> tuple:
         seccion("Codificadores de embeddings")
         try:
-            info(f"Cargando modelo de texto…", ajustes.modelo_texto)
+            info("Cargando modelo de texto…", ajustes.modelo_texto)
             codificador_texto = CodificadorTexto()
             ok("Modelo de texto listo", "384 dimensiones")
 
-            info(f"Cargando modelo de imagen…", ajustes.modelo_imagen)
+            info("Cargando modelo de imagen…", ajustes.modelo_imagen)
             codificador_imagen = CodificadorImagen()
             ok("Modelo de imagen listo", "512 dimensiones")
 
             return codificador_texto, codificador_imagen
-
         except Exception as e:
             err(f"Error al inicializar codificadores: {e}")
             raise
 
+    async def _inicializar_herramientas(
+        self,
+        codificador_texto: CodificadorTexto,
+        codificador_imagen: CodificadorImagen
+    ) -> None:
+        """
+        Instancia los grupos de tools e los añade a self._grupos.
 
-    async def _inicializar_herramientas(self, codificador_texto, codificador_imagen) -> None:
+        Para agregar un grupo nuevo en el futuro:
+            1. Instanciar la clase de tools.
+            2. Envolver en su adaptador ToolGroup.
+            3. Añadir con self._grupos.append(...).
+        No hay que tocar ningún otro método del servidor.
+        """
         seccion("Herramientas MCP")
         try:
-            info("Instanciando ToolsConsultaRAG")
-            self.tools_rag = ToolsConsultaRAG(codificador_texto)
-            ok("ToolsConsultaRAG", "DIP: CodificadorTexto")
+            info("Instanciando GrupoConsultaRAG")
+            self._grupos.append(
+                GrupoConsultaRAG(ToolsConsultaRAG(codificador_texto))
+            )
+            ok("GrupoConsultaRAG", "DIP: CodificadorTexto")
 
-            info("Instanciando GestionObjetos")
-            self.gestion_objetos = GestionObjetos(codificador_texto)
-            ok("GestionObjetos", "DIP: CodificadorTexto")
+            info("Instanciando GrupoGestionObjetos")
+            self._grupos.append(
+                GrupoGestionObjetos(GestionObjetos(codificador_texto))
+            )
+            ok("GrupoGestionObjetos", "DIP: CodificadorTexto")
 
-            info("Instanciando BusquedaSematica")
-            self.busqueda_semantica = BusquedaSematica(codificador_texto)
-            ok("BusquedaSematica", "DIP: CodificadorTexto")
+            info("Instanciando GrupoBusquedaSemantica")
+            self._grupos.append(
+                GrupoBusquedaSemantica(BusquedaSematica(codificador_texto))
+            )
+            ok("GrupoBusquedaSemantica", "DIP: CodificadorTexto")
 
-            info("Instanciando ToolsEvaluacionRAGAS")
-            self.evaluacion_ragas = ToolsEvaluacionRAGAS()
-            ok("ToolsEvaluacionRAGAS")
+            info("Instanciando GrupoEvaluacionRAGAS")
+            self._grupos.append(
+                GrupoEvaluacionRAGAS(ToolsEvaluacionRAGAS())
+            )
+            ok("GrupoEvaluacionRAGAS")
 
         except Exception as e:
             err(f"Error al inicializar herramientas: {e}")
             raise
 
+    # ── Registro dinámico ─────────────────────────────────────────────────────
 
     def _registrar_tools(self) -> None:
+        """
+        Registra todas las tools iterando sobre self._grupos.
+
+        Por cada grupo:
+            1. Obtiene sus definiciones con obtener_definiciones_tools().
+            2. Para cada Tool, guarda grupo → self._mapa_tools[tool.name].
+            3. Acumula las definiciones en self._tool_defs.
+
+        El handler único llama grupo.ejecutar(name, arguments) sin ningún
+        if/elif; el dispatch interno es responsabilidad de cada ToolGroup.
+        """
         seccion("Registro de tools")
         try:
-            grupos = [
-                (self.tools_rag.obtener_definiciones_tools(),         self._crear_handler_rag),
-                (self.gestion_objetos.obtener_definiciones_tools(),    self._crear_handler_gestion),
-                (self.busqueda_semantica.obtener_definiciones_tools(), self._crear_handler_busqueda),
-                (self.evaluacion_ragas.obtener_definiciones_tools(),   self._crear_handler_evaluacion),
-            ]
-
-            for defs, factory in grupos:
-                for tool_def in defs:
+            for grupo in self._grupos:
+                for tool_def in grupo.obtener_definiciones_tools():
                     self._tool_defs.append(tool_def)
-                    self._handlers[tool_def.name] = factory(tool_def.name)
+                    self._mapa_tools[tool_def.name] = grupo
 
             tabla_tools(self._tool_defs)
 
@@ -360,91 +495,33 @@ class ServidorMCPAstroData:
                 return self._tool_defs
 
             @self.servidor.call_tool()
-            async def llamar_tool(name: str, arguments: Dict[str, Any]) -> list[TextContent]:
-                handler = self._handlers.get(name)
-                if handler is None:
-                    return [TextContent(type="text", text=str({'error': f'Herramienta desconocida: {name}'}))]
-                result = await handler(arguments or {})
-                if isinstance(result, list):
-                    return result
-                return [result]
+            async def llamar_tool(
+                name: str,
+                arguments: Dict[str, Any]
+            ) -> list[TextContent]:
+                grupo = self._mapa_tools.get(name)
+                if grupo is None:
+                    return [TextContent(
+                        type="text",
+                        text=str({'error': f'Herramienta desconocida: {name}'})
+                    )]
+                try:
+                    resultado = await grupo.ejecutar(name, arguments or {})
+                except Exception as e:
+                    logger.error(f"Error ejecutando {name}: {e}")
+                    resultado = {'error': str(e), 'detalles': repr(e)}
 
-            print(f"\n  {C.GREEN}✓{C.RESET}  {C.BOLD}{len(self._tool_defs)} herramientas registradas{C.RESET}", file=sys.stderr)
+                return [TextContent(type="text", text=str(resultado))]
+
+            print(
+                f"\n  {C.GREEN}✓{C.RESET}  "
+                f"{C.BOLD}{len(self._tool_defs)} herramientas registradas{C.RESET}",
+                file=sys.stderr
+            )
 
         except Exception as e:
             err(f"Error al registrar herramientas: {e}")
             raise
-
-
-    # ── Handlers ─────────────────────────────────────────────────────────────
-
-    def _crear_handler_rag(self, nombre_tool: str) -> Callable:
-        async def handler(argumentos: Dict[str, Any]) -> TextContent:
-            try:
-                if nombre_tool == "rag_query":
-                    resultado = await self.tools_rag.rag_query(**argumentos)
-                elif nombre_tool == "obtener_contexto_objeto":
-                    resultado = await self.tools_rag.obtener_contexto_objeto(**argumentos)
-                else:
-                    resultado = {'error': f'Herramienta desconocida: {nombre_tool}'}
-                return TextContent(type="text", text=str(resultado))
-            except Exception as e:
-                logger.error(f"Error ejecutando {nombre_tool}: {e}")
-                return TextContent(type="text", text=str({'error': str(e), 'detalles': repr(e)}))
-        return handler
-
-
-    def _crear_handler_gestion(self, nombre_tool: str) -> Callable:
-        async def handler(argumentos: Dict[str, Any]) -> TextContent:
-            try:
-                if nombre_tool == "crear_objeto_astronomico":
-                    resultado = await self.gestion_objetos.crear_objeto_astronomico(**argumentos)
-                elif nombre_tool == "obtener_objeto_astronomico":
-                    resultado = await self.gestion_objetos.obtener_objeto_astronomico(**argumentos)
-                elif nombre_tool == "actualizar_objeto_astronomico":
-                    resultado = await self.gestion_objetos.actualizar_objeto_astronomico(**argumentos)
-                elif nombre_tool == "eliminar_objeto_astronomico":
-                    resultado = await self.gestion_objetos.eliminar_objeto_astronomico(**argumentos)
-                elif nombre_tool == "listar_planetas_habitables":
-                    resultado = await self.gestion_objetos.listar_planetas_habitables(**argumentos)
-                else:
-                    resultado = {'error': f'Herramienta desconocida: {nombre_tool}'}
-                return TextContent(type="text", text=str(resultado))
-            except Exception as e:
-                logger.error(f"Error ejecutando {nombre_tool}: {e}")
-                return TextContent(type="text", text=str({'error': str(e), 'detalles': repr(e)}))
-        return handler
-
-
-    def _crear_handler_busqueda(self, nombre_tool: str) -> Callable:
-        async def handler(argumentos: Dict[str, Any]) -> TextContent:
-            try:
-                if nombre_tool == "encontrar_planetas_similares":
-                    resultado = await self.busqueda_semantica.encontrar_planetas_similares(**argumentos)
-                else:
-                    resultado = {'error': f'Herramienta desconocida: {nombre_tool}'}
-                return TextContent(type="text", text=str(resultado))
-            except Exception as e:
-                logger.error(f"Error ejecutando {nombre_tool}: {e}")
-                return TextContent(type="text", text=str({'error': str(e), 'detalles': repr(e)}))
-        return handler
-
-
-    def _crear_handler_evaluacion(self, nombre_tool: str) -> Callable:
-        async def handler(argumentos: Dict[str, Any]) -> TextContent:
-            try:
-                if nombre_tool == "evaluar_respuesta_rag":
-                    resultado = await self.evaluacion_ragas.evaluar_respuesta_rag(**argumentos)
-                elif nombre_tool == "obtener_historial_evaluaciones":
-                    resultado = await self.evaluacion_ragas.obtener_historial_evaluaciones(**argumentos)
-                else:
-                    resultado = {'error': f'Herramienta desconocida: {nombre_tool}'}
-                return TextContent(type="text", text=str(resultado))
-            except Exception as e:
-                logger.error(f"Error ejecutando {nombre_tool}: {e}")
-                return TextContent(type="text", text=str({'error': str(e), 'detalles': repr(e)}))
-        return handler
-
 
     # ── Ciclo de vida ─────────────────────────────────────────────────────────
 
@@ -486,7 +563,6 @@ class ServidorMCPAstroData:
 
         finally:
             await self._cerrar_servidor()
-
 
     async def _cerrar_servidor(self) -> None:
         try:
