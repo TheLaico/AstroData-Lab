@@ -221,7 +221,76 @@ class RepositorioConsultas:
             raise RuntimeError(
                 f"Error al listar consultas del usuario {id_usuario}: {e}"
             ) from e
-    
+
+    # ========================================================================
+    # OPERACIONES DE EMBEDDINGS DE CONSULTA (pgvector)
+    # ========================================================================
+
+    async def guardar_embedding_consulta(
+        self,
+        id_consulta: int,
+        vector: List[float],
+        modelo: str
+    ) -> int:
+        """
+        Persiste el embedding vectorial de una consulta de usuario en pgvector.
+
+        Genera y almacena el vector semántico de la pregunta del usuario en la
+        tabla Embedding_Consulta. Este embedding se utiliza posteriormente para
+        buscar chunks de texto e imágenes similares mediante distancia coseno.
+
+        SQL utilizado:
+            INSERT INTO Embedding_Consulta (id_consulta, vector, modelo)
+            VALUES ($1, $2::vector, $3)
+            RETURNING id_embedding
+
+        Args:
+            id_consulta: ID de la consulta a la que pertenece el embedding
+            vector: Embedding numérico generado por el modelo de lenguaje
+            modelo: Nombre del modelo usado (ej: 'sentence-transformers/all-MiniLM-L6-v2')
+
+        Returns:
+            id_embedding asignado por la base de datos
+
+        Raises:
+            ValueError: Si el vector está vacío o id_consulta no es positivo
+            RuntimeError: Si hay error en la operación de BD
+
+        Example:
+            >>> repo = RepositorioConsultas()
+            >>> id_emb = await repo.guardar_embedding_consulta(
+            ...     id_consulta=42,
+            ...     vector=[0.12, -0.45, 0.88, ...],  # 384 valores
+            ...     modelo="sentence-transformers/all-MiniLM-L6-v2"
+            ... )
+        """
+        if not isinstance(id_consulta, int) or id_consulta <= 0:
+            raise ValueError("id_consulta debe ser un entero positivo")
+        if not vector:
+            raise ValueError("El vector no puede estar vacío")
+
+        vector_str = "[" + ",".join(str(v) for v in vector) + "]"
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                id_embedding = await conexion.fetchval(
+                    """
+                    INSERT INTO Embedding_Consulta (id_consulta, vector, modelo)
+                    VALUES ($1, $2::vector, $3)
+                    RETURNING id_embedding
+                    """,
+                    id_consulta,
+                    vector_str,
+                    modelo
+                )
+
+                return id_embedding
+
+        except Exception as e:
+            raise RuntimeError(
+                f"Error al guardar embedding de consulta {id_consulta}: {e}"
+            ) from e
+
     # ========================================================================
     # OPERACIONES CRUD DE RESULTADO
     # ========================================================================
@@ -352,7 +421,6 @@ class RepositorioConsultas:
                 
                 resultados_detallados = []
                 for fila in filas:
-                    # Construir Documento si existe
                     documento = None
                     if fila['d_id_doc']:
                         documento = Documento(
@@ -365,7 +433,6 @@ class RepositorioConsultas:
                             id_objeto=fila['id_objeto']
                         )
                     
-                    # Construir Imagen si existe
                     imagen = None
                     if fila['i_id_imagen']:
                         imagen = Imagen(
@@ -376,7 +443,6 @@ class RepositorioConsultas:
                             id_doc=fila['i_id_doc']
                         )
                     
-                    # Construir ResultadoDetallado
                     resultado_base = Resultado(
                         id_resultado=fila['id_resultado'],
                         descripcion_resultado=fila['descripcion_resultado'],
