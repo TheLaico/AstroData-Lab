@@ -55,10 +55,10 @@ class GestionObjetos:
         _repo_objetos: Repositorio para gestionar objetos astronómicos
         _repo_documentos: Repositorio para gestionar embeddings
     """
-    
+
     # Tipos de objetos válidos soportados
     TIPOS_VALIDOS = {'galaxia', 'sistema_estelar', 'estrella', 'planeta', 'luna'}
-    
+
     def __init__(self, codificador: CodificadorBase) -> None:
         """
         Inicializa las herramientas de gestión de objetos con sus dependencias.
@@ -74,12 +74,11 @@ class GestionObjetos:
             raise TypeError(
                 "codificador debe implementar la interfaz CodificadorBase"
             )
-        
+
         self._codificador = codificador
         self._repo_objetos = RepositorioObjetos()
         self._repo_documentos = RepositorioDocumentos()
-    
-    
+
     async def _crear_por_tipo(
         self,
         tipo: str,
@@ -88,8 +87,10 @@ class GestionObjetos:
         atributos: dict
     ):
         """
-        Crea el objeto base en Objeto_Astronomico y luego inserta
-        en la tabla específica del tipo (Planeta, Estrella, etc.).
+        Crea el objeto astronómico completo delegando directamente al método
+        específico del repositorio. Cada método crear_X del repositorio realiza
+        su propio INSERT en Objeto_Astronomico y en la tabla del tipo, por lo
+        que NO se llama a crear_objeto() por separado.
 
         Retorna el objeto creado o un dict con 'error' si fallan las validaciones.
         """
@@ -101,14 +102,10 @@ class GestionObjetos:
                     "error": "Falta atributo requerido: id_sistema",
                     "detalles": "Un planeta debe pertenecer a un sistema estelar existente."
                 }
-            objeto_base = await self._repo_objetos.crear_objeto(
-                nombre=nombre,
-                descripcion=descripcion_cientifica
-            )
             planeta = Planeta(
-                id_objeto=objeto_base.id_objeto,
-                nombre=objeto_base.nombre,
-                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_objeto=0,  # Asignado por la BD al insertar
+                nombre=nombre,
+                descripcion_cientifica=descripcion_cientifica,
                 id_tipo_planeta=atributos.get("id_tipo_planeta", 1),
                 id_sistema=int(id_sistema),
                 masa=float(atributos.get("masa", atributos.get("masa_masas_terrestres", 1.0))),
@@ -124,14 +121,10 @@ class GestionObjetos:
                     "error": "Falta atributo requerido: id_sistema",
                     "detalles": "Una estrella debe pertenecer a un sistema estelar existente."
                 }
-            objeto_base = await self._repo_objetos.crear_objeto(
-                nombre=nombre,
-                descripcion=descripcion_cientifica
-            )
             estrella = Estrella(
-                id_objeto=objeto_base.id_objeto,
-                nombre=objeto_base.nombre,
-                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_objeto=0,  # Asignado por la BD al insertar
+                nombre=nombre,
+                descripcion_cientifica=descripcion_cientifica,
                 id_tipo_estrella=atributos.get("id_tipo_estrella", 1),
                 id_sistema=int(id_sistema),
                 masa=float(atributos.get("masa", 1.0)),
@@ -147,28 +140,20 @@ class GestionObjetos:
                     "error": "Falta atributo requerido: id_galaxia",
                     "detalles": "Un sistema estelar debe pertenecer a una galaxia existente."
                 }
-            objeto_base = await self._repo_objetos.crear_objeto(
-                nombre=nombre,
-                descripcion=descripcion_cientifica
-            )
             sistema = SistemaEstelar(
-                id_objeto=objeto_base.id_objeto,
-                nombre=objeto_base.nombre,
-                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_objeto=0,  # Asignado por la BD al insertar
+                nombre=nombre,
+                descripcion_cientifica=descripcion_cientifica,
                 id_galaxia=int(id_galaxia)
             )
             return await self._repo_objetos.crear_sistema_estelar(sistema)
 
         # ── Galaxia ────────────────────────────────────────────────────────
         elif tipo == "galaxia":
-            objeto_base = await self._repo_objetos.crear_objeto(
-                nombre=nombre,
-                descripcion=descripcion_cientifica
-            )
             galaxia = Galaxia(
-                id_objeto=objeto_base.id_objeto,
-                nombre=objeto_base.nombre,
-                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_objeto=0,  # Asignado por la BD al insertar
+                nombre=nombre,
+                descripcion_cientifica=descripcion_cientifica,
                 id_tipo_galaxia=atributos.get("id_tipo_galaxia", 1),
                 distancia=float(atributos.get("distancia", 0.0))
             )
@@ -182,14 +167,10 @@ class GestionObjetos:
                     "error": "Falta atributo requerido: id_planeta",
                     "detalles": "Una luna debe orbitar un planeta existente."
                 }
-            objeto_base = await self._repo_objetos.crear_objeto(
-                nombre=nombre,
-                descripcion=descripcion_cientifica
-            )
             luna = Luna(
-                id_objeto=objeto_base.id_objeto,
-                nombre=objeto_base.nombre,
-                descripcion_cientifica=objeto_base.descripcion_cientifica,
+                id_objeto=0,  # Asignado por la BD al insertar
+                nombre=nombre,
+                descripcion_cientifica=descripcion_cientifica,
                 id_planeta=int(id_planeta),
                 radio=float(atributos.get("radio", 0.0))
             )
@@ -212,19 +193,20 @@ class GestionObjetos:
         
         Proceso:
         1. Valida que tipo sea uno de: galaxia, sistema_estelar, estrella, planeta, luna
-        2. Crea objeto base en Objeto_Astronomico
-        3. Inserta en tabla específica del tipo (Galaxia, Estrella, Planeta, etc.)
-        4. Vectoriza descripción_cientifica con CodificadorTexto → 384 dimensiones
-        5. Guarda embedding en Embedding_Texto para búsquedas posteriores
-        6. Retorna objeto completo con id asignado
+        2. Valida que nombre y descripcion_cientifica no estén vacíos
+        3. Inserta en la tabla específica del tipo (el repositorio gestiona también
+           el INSERT en Objeto_Astronomico)
+        4. Vectoriza descripcion_cientifica con el codificador inyectado
+        5. Persiste el vector en Embedding_Texto (chunk_id=0, estrategia='descripcion')
+        6. Retorna objeto completo con id asignado y estado real del embedding
         
         Args:
             nombre: Nombre del objeto (ej: "Vía Láctea", "Proxima Centauri")
-            tipo: Tipo de objeto, uno de: 'galaxia', 'sistema_estelar', 'estrella', 
+            tipo: Tipo de objeto, uno de: 'galaxia', 'sistema_estelar', 'estrella',
                   'planeta', 'luna'
             descripcion_cientifica: Descripción técnica del objeto para embeddings
             atributos: Dict con atributos específicos del tipo
-                      Ej: {'id_tipo_planeta': 1, 'masa_masas_terrestres': 1.0, 
+                      Ej: {'id_tipo_planeta': 1, 'masa_masas_terrestres': 1.0,
                            'temperatura_K': 288, 'id_sistema': 5}
         
         Returns:
@@ -234,7 +216,7 @@ class GestionObjetos:
                 'nombre': str,
                 'tipo': str,
                 'descripcion_cientifica': str,
-                'embedding_generado': bool,
+                'embedding_generado': bool,  # True solo si se persistió correctamente
                 'fecha_creacion': str (ISO format),
                 'atributos': dict
             }
@@ -267,23 +249,23 @@ class GestionObjetos:
                     'error': f"Tipo de objeto no válido: {tipo}",
                     'detalles': f"Debe ser uno de: {', '.join(self.TIPOS_VALIDOS)}"
                 }
-            
+
             tipo = tipo.lower()
-            
+
             # 2. Validar inputs básicos
             if not nombre or not nombre.strip():
                 return {
                     'error': "El nombre del objeto no puede estar vacío",
                     'detalles': ""
                 }
-            
+
             if not descripcion_cientifica or not descripcion_cientifica.strip():
                 return {
                     'error': "La descripción científica no puede estar vacía",
                     'detalles': ""
                 }
-            
-            # 3. Insertar en la tabla específica del tipo
+
+            # 3. Crear objeto en BD (un solo INSERT por método crear_X del repositorio)
             objeto = await self._crear_por_tipo(
                 tipo=tipo,
                 nombre=nombre.strip(),
@@ -294,17 +276,28 @@ class GestionObjetos:
             if isinstance(objeto, dict) and 'error' in objeto:
                 return objeto
 
-            # 4. Vectorizar descripción para embeddings (para uso futuro)
+            # 4 & 5. Vectorizar la descripción y persistir el embedding.
+            #        embedding_generado refleja el resultado real de la persistencia:
+            #        True solo si tanto la codificación como el INSERT en BD tuvieron éxito.
+            embedding_generado = False
             try:
                 vector = await self._codificador.codificar_texto(
                     descripcion_cientifica.strip()
                 )
+                await self._repo_documentos.guardar_embedding_texto(
+                    id_doc=objeto.id_objeto,
+                    chunk_id=0,
+                    vector=vector,
+                    modelo=self._codificador.nombre_modelo,
+                    estrategia_chunking='descripcion'
+                )
                 embedding_generado = True
             except Exception:
-                vector = None
+                # El objeto ya fue creado; el embedding fallido no revierte la creación.
+                # El llamador puede reintentar la vectorización de forma independiente.
                 embedding_generado = False
 
-            # 5. Retornar respuesta
+            # 6. Retornar respuesta
             return {
                 'id_objeto': objeto.id_objeto,
                 'nombre': objeto.nombre,
@@ -314,14 +307,13 @@ class GestionObjetos:
                 'fecha_creacion': datetime.now().isoformat(),
                 'atributos': atributos
             }
-        
+
         except Exception as e:
             return {
                 'error': "Error al crear objeto astronómico",
                 'detalles': str(e)
             }
-    
-    
+
     async def obtener_objeto_astronomico(
         self,
         id_objeto: Optional[int] = None,
@@ -365,45 +357,44 @@ class GestionObjetos:
                     'error': "Debe proporcionar id_objeto o nombre",
                     'encontrado': False
                 }
-            
+
             objeto = None
-            
+
             # Buscar por ID si se proporciona
             if id_objeto is not None:
                 try:
                     objeto = await self._repo_objetos.obtener_objeto_por_id(id_objeto)
-                except Exception as e:
+                except Exception:
                     pass
-            
+
             # Buscar por nombre si no se encontró por ID
             if objeto is None and nombre and nombre.strip():
                 try:
                     objeto = await self._repo_objetos.obtener_objeto_por_nombre(
                         nombre.strip()
                     )
-                except Exception as e:
+                except Exception:
                     pass
-            
+
             if objeto is None:
                 return {
                     'error': "Objeto astronómico no encontrado",
                     'encontrado': False
                 }
-            
+
             return {
                 'id_objeto': objeto.id_objeto,
                 'nombre': objeto.nombre,
                 'descripcion_cientifica': objeto.descripcion_cientifica,
                 'encontrado': True
             }
-        
+
         except Exception as e:
             return {
                 'error': f"Error al obtener objeto: {str(e)}",
                 'encontrado': False
             }
-    
-    
+
     async def actualizar_objeto_astronomico(
         self,
         id_objeto: int,
@@ -457,35 +448,42 @@ class GestionObjetos:
                     'detalles': f"ID: {id_objeto}",
                     'actualizado': False
                 }
-            
+
             embedding_regenerado = False
-            
-            # Si se actualiza descripción, regenerar embedding
+
+            # Si se actualiza descripción, actualizar en BD y regenerar embedding
             if 'descripcion_cientifica' in campos:
                 nueva_descripcion = campos['descripcion_cientifica']
-                
+
                 if isinstance(nueva_descripcion, str) and nueva_descripcion.strip():
-                    # Actualizar en BD
+                    # Actualizar descripción en BD
                     objeto = await self._repo_objetos.actualizar_descripcion(
                         id_objeto=id_objeto,
                         nueva_descripcion=nueva_descripcion.strip()
                     )
-                    
-                    # Regenerar embedding (para uso futuro cuando haya tabla dedicada)
+
+                    # Regenerar y persistir embedding
                     try:
                         vector = await self._codificador.codificar_texto(
                             nueva_descripcion.strip()
                         )
+                        await self._repo_documentos.guardar_embedding_texto(
+                            id_doc=objeto.id_objeto,
+                            chunk_id=0,
+                            vector=vector,
+                            modelo=self._codificador.nombre_modelo,
+                            estrategia_chunking='descripcion'
+                        )
                         embedding_regenerado = True
-                    except Exception as e:
-                        pass
+                    except Exception:
+                        embedding_regenerado = False
                 else:
                     return {
                         'error': "Descripción científica vacía",
                         'detalles': "",
                         'actualizado': False
                     }
-            
+
             return {
                 'id_objeto': objeto.id_objeto,
                 'nombre': objeto.nombre,
@@ -494,22 +492,21 @@ class GestionObjetos:
                 'embedding_regenerado': embedding_regenerado,
                 'fecha_actualizacion': datetime.now().isoformat()
             }
-        
+
         except Exception as e:
             return {
                 'error': "Error al actualizar objeto",
                 'detalles': str(e),
                 'actualizado': False
             }
-    
-    
+
     async def eliminar_objeto_astronomico(self, id_objeto: int) -> Dict[str, Any]:
         """
         Elimina un objeto astronómico de la base de datos.
         
         Realiza eliminación en cascada: elimina el objeto y todas sus
         referencias asociadas (embeddings, documentos, características, etc.)
-        mantiene la integridad referencial de la BD.
+        manteniendo la integridad referencial de la BD.
         
         Args:
             id_objeto: ID del objeto a eliminar
@@ -545,17 +542,17 @@ class GestionObjetos:
                     'detalles': f"ID: {id_objeto}",
                     'eliminado': False
                 }
-            
+
             # Realizar eliminación
             eliminado = await self._repo_objetos.eliminar_objeto(id_objeto)
-            
+
             if not eliminado:
                 return {
                     'error': "No se pudo eliminar el objeto",
                     'detalles': f"El repositorio retornó False para ID: {id_objeto}",
                     'eliminado': False
                 }
-            
+
             return {
                 'eliminado': True,
                 'id_objeto': id_objeto,
@@ -563,15 +560,14 @@ class GestionObjetos:
                 'fecha_eliminacion': datetime.now().isoformat(),
                 'confirmacion': f"Objeto '{objeto.nombre}' eliminado completamente con cascada"
             }
-        
+
         except Exception as e:
             return {
                 'error': "Error al eliminar objeto",
                 'detalles': str(e),
                 'eliminado': False
             }
-    
-    
+
     async def listar_planetas_habitables(
         self,
         puntaje_minimo: float = 0.5,
@@ -597,8 +593,8 @@ class GestionObjetos:
                         'id_objeto': int,
                         'nombre': str,
                         'descripcion_cientifica': str,
-                        'masa_masas_terrestres': float,
-                        'temperatura_K': int,
+                        'masa': float,
+                        'temperatura': int,
                         'puntaje_habitabilidad': float
                     },
                     ...
@@ -633,34 +629,34 @@ class GestionObjetos:
                     'planetas': [],
                     'total': 0
                 }
-            
+
             # Obtener planetas habitables
             planetas = await self._repo_objetos.listar_planetas_por_habitabilidad(
                 puntaje_minimo=puntaje_minimo
             )
-            
+
             # Convertir a dicts para respuesta
-            planetas_lista = []
-            for planeta in planetas:
-                planetas_lista.append({
+            planetas_lista = [
+                {
                     'id_objeto': planeta.id_objeto,
                     'nombre': planeta.nombre,
                     'descripcion_cientifica': planeta.descripcion_cientifica,
                     'masa': planeta.masa,
                     'temperatura': planeta.temperatura,
                     'puntaje_habitabilidad': puntaje_minimo
-                })
-            
-            # TODO: Filtrar por características si se implementa en repositorio
-            # Por ahora retornamos todos los que cumplen el puntaje
-            
+                }
+                for planeta in planetas
+            ]
+
+            # TODO: Filtrar por características cuando se implemente en repositorio
+
             return {
                 'planetas': planetas_lista,
                 'total': len(planetas_lista),
                 'puntaje_minimo': puntaje_minimo,
                 'caracteristicas_filtro': caracteristicas or []
             }
-        
+
         except Exception as e:
             return {
                 'error': "Error al listar planetas habitables",
@@ -668,8 +664,7 @@ class GestionObjetos:
                 'planetas': [],
                 'total': 0
             }
-    
-    
+
     def obtener_definiciones_tools(self) -> List[Tool]:
         """
         Retorna las definiciones de herramientas MCP para registro en el servidor.
@@ -688,7 +683,11 @@ class GestionObjetos:
         return [
             Tool(
                 name="crear_objeto_astronomico",
-                description="Crea un nuevo objeto astronómico en la base de datos con su descripción científica. Genera automáticamente embeddings para búsquedas semánticas posteriores.",
+                description=(
+                    "Crea un nuevo objeto astronómico en la base de datos con su descripción "
+                    "científica. Genera y persiste automáticamente el embedding de la descripción "
+                    "para búsquedas semánticas posteriores."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -707,7 +706,10 @@ class GestionObjetos:
                         },
                         "atributos": {
                             "type": "object",
-                            "description": "Atributos específicos del tipo (masa en masas terrestres, temperatura en Kelvin, id_sistema, etc.)"
+                            "description": (
+                                "Atributos específicos del tipo "
+                                "(masa en masas terrestres, temperatura en Kelvin, id_sistema, etc.)"
+                            )
                         }
                     },
                     "required": ["nombre", "tipo", "descripcion_cientifica", "atributos"]
@@ -732,7 +734,10 @@ class GestionObjetos:
             ),
             Tool(
                 name="actualizar_objeto_astronomico",
-                description="Actualiza campos de un objeto astronómico. Si se modifica descripción_cientifica, regenera su embedding automáticamente.",
+                description=(
+                    "Actualiza campos de un objeto astronómico. Si se modifica "
+                    "descripcion_cientifica, regenera y persiste su embedding automáticamente."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -750,7 +755,10 @@ class GestionObjetos:
             ),
             Tool(
                 name="eliminar_objeto_astronomico",
-                description="Elimina un objeto astronómico de la base de datos con eliminación en cascada de referencias.",
+                description=(
+                    "Elimina un objeto astronómico de la base de datos "
+                    "con eliminación en cascada de referencias."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
