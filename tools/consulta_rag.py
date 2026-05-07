@@ -161,7 +161,7 @@ class ToolsConsultaRAG:
             await self._repo_consultas.guardar_embedding_consulta(
                 id_consulta=consulta.id_consulta,
                 vector=vector_embedding,
-                modelo=self._codificador.nombre_modelo
+                modelo=await self._codificador.nombre_modelo()
             )
 
             # 4. Buscar chunks similares por similitud coseno
