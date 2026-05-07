@@ -58,7 +58,6 @@ logs/
 *.log.*
 
 # Modelos de ML (pueden ser muy grandes)
-models/
 *.bin
 *.pt
 *.pth
