@@ -21,7 +21,7 @@ from mcp.types import Tool, TextContent
 from database.repositorio_documentos import RepositorioDocumentos
 from database.repositorio_objetos import RepositorioObjetos
 from embeddings.interfaz_codificador import CodificadorBase
-from models.objeto_astronomico import Planeta
+from models.planeta_model import Planeta
 
 
 class BusquedaSematica:

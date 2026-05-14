@@ -18,19 +18,20 @@ permitir búsquedas semánticas posteriores.
 
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import re
 from mcp.types import Tool, TextContent
 
 from database.repositorio_objetos import RepositorioObjetos
 from database.repositorio_documentos import RepositorioDocumentos
 from embeddings.interfaz_codificador import CodificadorBase
-from models.objeto_astronomico import (
-    ObjetoAstronomico,
-    Galaxia,
-    SistemaEstelar,
-    Estrella,
-    Planeta,
-    Luna,
-)
+from models.base_objeto_astronomico import ObjetoAstronomico
+from models.galaxia_model import Galaxia
+from models.sistema_estelar_model import SistemaEstelar
+from models.estrella_model import Estrella
+from models.planeta_model import Planeta
+from models.luna_model import Luna
+from models.documento_model import Documento
+from models.imagen_model import Imagen
 
 
 class GestionObjetos:
@@ -78,6 +79,330 @@ class GestionObjetos:
         self._codificador = codificador
         self._repo_objetos = RepositorioObjetos()
         self._repo_documentos = RepositorioDocumentos()
+
+    def _chunificar_texto(
+        self,
+        texto: str,
+        estrategia: str = 'sentence'
+    ) -> List[str]:
+        """
+        Divide un texto en chunks según la estrategia especificada.
+        
+        Implementa estrategias de chunking para preparar documentos para
+        embeddings. Cada chunk genera su propio embedding para búsqueda
+        semántica granular.
+        
+        Args:
+            texto: Texto a dividir
+            estrategia: 'sentence' (por oraciones), 'paragraph' (por párrafos),
+                       'fixed' (tamaño fijo de 500 caracteres)
+        
+        Returns:
+            Lista de chunks de texto
+        
+        Raises:
+            ValueError: Si estrategia no es válida
+        """
+        if not texto or not texto.strip():
+            return []
+        
+        if estrategia == 'sentence':
+            # Dividir por oraciones (punto, exclamación, interrogación)
+            # Manteniendo puntuación
+            chunks = re.split(r'(?<=[.!?])\s+', texto.strip())
+            # Filtrar chunks vacíos
+            return [chunk.strip() for chunk in chunks if chunk.strip()]
+        
+        elif estrategia == 'paragraph':
+            # Dividir por párrafos (saltos de línea dobles)
+            chunks = texto.strip().split('\n\n')
+            return [chunk.strip() for chunk in chunks if chunk.strip()]
+        
+        elif estrategia == 'fixed':
+            # Dividir en chunks de ~500 caracteres, respetando espacios
+            chunk_size = 500
+            chunks = []
+            current = ''
+            
+            for palabra in texto.split():
+                if len(current) + len(palabra) + 1 > chunk_size:
+                    if current:
+                        chunks.append(current.strip())
+                    current = palabra
+                else:
+                    current += ' ' + palabra if current else palabra
+            
+            if current:
+                chunks.append(current.strip())
+            
+            return chunks
+        
+        else:
+            raise ValueError(
+                f"Estrategia de chunking no válida: {estrategia}. "
+                f"Debe ser: 'sentence', 'paragraph', 'fixed'"
+            )
+
+    async def crear_documento_con_embeddings(
+        self,
+        titulo: str,
+        contenido_texto: str,
+        id_objeto: int,
+        idioma: str = 'es',
+        fuente: str = 'manual',
+        estrategia_chunking: str = 'sentence'
+    ) -> Dict[str, Any]:
+        """
+        Crea un documento con chunking automático y embeddings para cada chunk.
+        
+        Orquesta el flujo completo:
+        1. Crea el documento en BD
+        2. Divide el contenido en chunks según estrategia
+        3. Genera embedding para cada chunk con el codificador inyectado
+        4. Persiste cada embedding vectorial en Embedding_Texto
+        5. Retorna resultado con estadísticas de chunking y embedding
+        
+        Sigue SRP: orquesta sin implementar persistencia (delegada a repositorios).
+        
+        Args:
+            titulo: Título del documento
+            contenido_texto: Contenido completo a chunificar
+            id_objeto: ID del objeto astronómico relacionado
+            idioma: Código de idioma ISO 639-1 (ej: 'es', 'en', 'fr')
+            fuente: Origen del documento (ej: 'NASA', 'ESA', 'manual')
+            estrategia_chunking: Estrategia a usar ('sentence', 'paragraph', 'fixed')
+        
+        Returns:
+            Dict con estructura:
+            {
+                'id_doc': int,
+                'titulo': str,
+                'contenido_texto': str,
+                'id_objeto': int,
+                'num_chunks': int,
+                'chunks_con_embedding': int,
+                'embeddings_generados': bool,
+                'estrategia_chunking': str,
+                'fecha_creacion': str,
+                'chunk_ids': [int, ...]  # IDs de embeddings persistidos
+            }
+            
+            O en caso de error:
+            {
+                'error': str,
+                'detalles': str
+            }
+        
+        Example:
+            >>> resultado = await gestion.crear_documento_con_embeddings(
+            ...     titulo='Características de Marte',
+            ...     contenido_texto='Marte es un planeta rocoso. Tiene una atmósfera delgada.'
+            ...                      'Su temperatura promedio es de -65°C.',
+            ...     id_objeto=5,
+            ...     estrategia_chunking='sentence'
+            ... )
+            >>> resultado['num_chunks']
+            3
+            >>> resultado['embeddings_generados']
+            True
+        """
+        try:
+            # 1. Validar inputs
+            if not titulo or not titulo.strip():
+                return {'error': 'El título no puede estar vacío', 'detalles': ''}
+            
+            if not contenido_texto or not contenido_texto.strip():
+                return {'error': 'El contenido no puede estar vacío', 'detalles': ''}
+            
+            if id_objeto <= 0:
+                return {'error': 'id_objeto debe ser positivo', 'detalles': ''}
+            
+            # 2. Crear documento en BD
+            documento = Documento(
+                id_doc=0,  # Asignado por BD
+                titulo=titulo.strip(),
+                idioma=idioma,
+                fecha=datetime.now(),
+                fuente=fuente,
+                contenido_texto=contenido_texto.strip(),
+                id_objeto=id_objeto
+            )
+            
+            documento_creado = await self._repo_documentos.crear_documento(documento)
+            
+            # 3. Chunificar contenido
+            chunks = self._chunificar_texto(
+                contenido_texto.strip(),
+                estrategia_chunking
+            )
+            
+            if not chunks:
+                return {
+                    'error': 'El chunking no generó fragmentos válidos',
+                    'detalles': f'Estrategia: {estrategia_chunking}'
+                }
+            
+            # 4 & 5. Generar embeddings para cada chunk
+            chunk_ids = []
+            chunks_con_embedding = 0
+            
+            for chunk_id, chunk_contenido in enumerate(chunks):
+                try:
+                    # Generar embedding del chunk
+                    vector = await self._codificador.codificar_texto(chunk_contenido)
+                    
+                    # Persistir embedding
+                    id_embedding = await self._repo_documentos.guardar_embedding_texto(
+                        id_doc=documento_creado.id_doc,
+                        chunk_id=chunk_id,
+                        vector=vector,
+                        modelo=self._codificador.nombre_modelo,
+                        estrategia_chunking=estrategia_chunking
+                    )
+                    
+                    chunk_ids.append(id_embedding)
+                    chunks_con_embedding += 1
+                
+                except Exception:
+                    # Continuar con próximo chunk si éste falla
+                    pass
+            
+            embeddings_exitosos = chunks_con_embedding == len(chunks)
+            
+            # 6. Retornar respuesta
+            return {
+                'id_doc': documento_creado.id_doc,
+                'titulo': documento_creado.titulo,
+                'contenido_texto': documento_creado.contenido_texto[:200] + '...',
+                'id_objeto': documento_creado.id_objeto,
+                'num_chunks': len(chunks),
+                'chunks_con_embedding': chunks_con_embedding,
+                'embeddings_generados': embeddings_exitosos,
+                'estrategia_chunking': estrategia_chunking,
+                'fecha_creacion': datetime.now().isoformat(),
+                'chunk_ids': chunk_ids
+            }
+        
+        except Exception as e:
+            return {
+                'error': 'Error al crear documento con embeddings',
+                'detalles': str(e)
+            }
+
+    async def crear_imagen_con_embedding(
+        self,
+        ruta_archivo: str,
+        descripcion: str,
+        etiquetas: List[str],
+        id_doc: int
+    ) -> Dict[str, Any]:
+        """
+        Crea un registro de imagen con embedding vectorial automático.
+        
+        Orquesta el flujo:
+        1. Crea registro de imagen en BD
+        2. Genera embedding CLIP de la imagen
+        3. Persiste embedding en Embedding_Imagen
+        4. Retorna resultado
+        
+        Requiere que el codificador inyectado sea capaz de procesar imágenes.
+        
+        Args:
+            ruta_archivo: Ruta al archivo de imagen (ej: '/datos/galaxias/m31.jpg')
+            descripcion: Descripción textual de la imagen
+            etiquetas: Lista de etiquetas para categorización (ej: ['galaxia', 'espiral'])
+            id_doc: ID del documento asociado
+        
+        Returns:
+            Dict con estructura:
+            {
+                'id_imagen': int,
+                'ruta_archivo': str,
+                'descripcion': str,
+                'etiquetas': list,
+                'id_doc': int,
+                'embedding_generado': bool,
+                'fecha_creacion': str
+            }
+            
+            O en caso de error:
+            {
+                'error': str,
+                'detalles': str
+            }
+        
+        Example:
+            >>> resultado = await gestion.crear_imagen_con_embedding(
+            ...     ruta_archivo='/datos/galaxias/andromeda.jpg',
+            ...     descripcion='Galaxia de Andromeda capturada por Hubble',
+            ...     etiquetas=['galaxia', 'andromeda', 'espiral'],
+            ...     id_doc=3
+            ... )
+            >>> resultado['embedding_generado']
+            True
+        """
+        try:
+            # 1. Validar inputs
+            if not ruta_archivo or not ruta_archivo.strip():
+                return {'error': 'La ruta del archivo no puede estar vacía', 'detalles': ''}
+            
+            if not descripcion or not descripcion.strip():
+                return {'error': 'La descripción no puede estar vacía', 'detalles': ''}
+            
+            if id_doc <= 0:
+                return {'error': 'id_doc debe ser positivo', 'detalles': ''}
+            
+            # 2. Crear imagen en BD
+            imagen = Imagen(
+                id_imagen=0,  # Asignado por BD
+                ruta_archivo=ruta_archivo.strip(),
+                descripcion=descripcion.strip(),
+                etiquetas=etiquetas or [],
+                id_doc=id_doc
+            )
+            
+            imagen_creada = await self._repo_documentos.crear_imagen(imagen)
+            
+            # 3. Generar embedding de imagen
+            embedding_generado = False
+            try:
+                # Usar codificador para procesar imagen
+                # El codificador debe tener método codificar_imagen()
+                if hasattr(self._codificador, 'codificar_imagen'):
+                    vector = await self._codificador.codificar_imagen(ruta_archivo.strip())
+                    
+                    # 4. Persistir embedding
+                    await self._repo_documentos.guardar_embedding_imagen(
+                        id_imagen=imagen_creada.id_imagen,
+                        vector=vector,
+                        modelo=self._codificador.nombre_modelo
+                    )
+                    
+                    embedding_generado = True
+                else:
+                    # Codificador no soporta imágenes
+                    pass
+            
+            except Exception:
+                # Si falla embedding, la imagen ya fue creada
+                embedding_generado = False
+            
+            # 5. Retornar respuesta
+            return {
+                'id_imagen': imagen_creada.id_imagen,
+                'ruta_archivo': imagen_creada.ruta_archivo,
+                'descripcion': imagen_creada.descripcion,
+                'etiquetas': imagen_creada.etiquetas,
+                'id_doc': imagen_creada.id_doc,
+                'embedding_generado': embedding_generado,
+                'fecha_creacion': datetime.now().isoformat()
+            }
+        
+        except Exception as e:
+            return {
+                'error': 'Error al crear imagen con embedding',
+                'detalles': str(e)
+            }
 
     async def _crear_por_tipo(
         self,
@@ -786,6 +1111,79 @@ class GestionObjetos:
                             "description": "Características ambientales para filtrar (opcional)"
                         }
                     }
+                }
+            ),
+            Tool(
+                name="crear_documento_con_embeddings",
+                description=(
+                    "Crea un documento científico con chunking automático y embeddings "
+                    "vectoriales para cada fragmento. Permite búsqueda semántica granular."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "titulo": {
+                            "type": "string",
+                            "description": "Título del documento"
+                        },
+                        "contenido_texto": {
+                            "type": "string",
+                            "description": "Contenido completo a chunificar y vectorizar"
+                        },
+                        "id_objeto": {
+                            "type": "integer",
+                            "description": "ID del objeto astronómico relacionado"
+                        },
+                        "idioma": {
+                            "type": "string",
+                            "description": "Código ISO 639-1 del idioma (ej: 'es', 'en'). Default: 'es'"
+                        },
+                        "fuente": {
+                            "type": "string",
+                            "description": "Origen del documento (ej: 'NASA', 'ESA', 'manual'). Default: 'manual'"
+                        },
+                        "estrategia_chunking": {
+                            "type": "string",
+                            "enum": ["sentence", "paragraph", "fixed"],
+                            "description": (
+                                "Estrategia de división: "
+                                "'sentence' (por oraciones, recomendado), "
+                                "'paragraph' (por párrafos), "
+                                "'fixed' (bloques de ~500 caracteres)"
+                            )
+                        }
+                    },
+                    "required": ["titulo", "contenido_texto", "id_objeto"]
+                }
+            ),
+            Tool(
+                name="crear_imagen_con_embedding",
+                description=(
+                    "Crea un registro de imagen astronómica con embedding vectorial CLIP "
+                    "automático para búsqueda visual semántica."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "ruta_archivo": {
+                            "type": "string",
+                            "description": "Ruta al archivo de imagen (ej: '/datos/galaxias/m31.jpg')"
+                        },
+                        "descripcion": {
+                            "type": "string",
+                            "description": "Descripción textual de la imagen"
+                        },
+                        "etiquetas": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Etiquetas para categorización (ej: ['galaxia', 'espiral'])"
+                        },
+                        "id_doc": {
+                            "type": "integer",
+                            "description": "ID del documento científico asociado"
+                        }
+                    },
+                    "required": ["ruta_archivo", "descripcion", "id_doc"]
                 }
             )
         ]

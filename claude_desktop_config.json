@@ -1,12 +1,9 @@
 {
   "mcpServers": {
     "astrodata-mcp": {
-      "command": "C:\\Users\\rbx56\\OneDrive\\Desktop\\University\\lV SEMESTRE\\BASES DATOS RELACIONALES\\Proyecto\\AstroData-Lab\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "server.servidor_mcp"],
-      "cwd": "C:\\Users\\rbx56\\OneDrive\\Desktop\\University\\lV SEMESTRE\\BASES DATOS RELACIONALES\\Proyecto\\AstroData-Lab",
-      "env": {
-        "PYTHONPATH": "C:\\Users\\rbx56\\OneDrive\\Desktop\\University\\lV SEMESTRE\\BASES DATOS RELACIONALES\\Proyecto\\AstroData-Lab"
-      }
+      "command": "C:\\Users\\Propietario\\Desktop\\astro\\AstroData-Lab\\.venv\\Scripts\\python.exe",
+      "args": ["server/servidor_mcp.py"],
+      "cwd": "C:\\Users\\Propietario\\Desktop\\astro\\AstroData-Lab"
     }
   }
 }
