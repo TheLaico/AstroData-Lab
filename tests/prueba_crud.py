@@ -197,4 +197,9 @@ async def test_eliminar_objeto_inexistente(
     en español cuando el id no existe en la base de datos."""
     mock_repo_objetos.obtener_objeto_por_id = AsyncMock(return_value=None)
 
-    with patch("tools.gestion_objetos.RepositorioObjetos", return_value=mock_repo_ob
+    with patch("tools.gestion_objetos.RepositorioObjetos", return_value=mock_repo_objetos), \
+         patch("tools.gestion_objetos.RepositorioDocumentos", return_value=mock_repo_documentos):
+
+        from tools.gestion_objetos import GestionObjetos
+        gestion = GestionObjetos(codificador=mock_codificador)
+        resultado = await gestion.eliminar_objeto_astronomico(id_objeto=999)

@@ -36,9 +36,7 @@ class RepositorioObjetos:
     Todos los métodos son asincrónicos (async) para no bloquear el event loop.
     """
     
-    # ========================================================================
     # OPERACIONES CRUD BÁSICAS DE OBJETO ASTRONÓMICO
-    # ========================================================================
     
     async def crear_objeto(
         self,
@@ -295,9 +293,7 @@ class RepositorioObjetos:
                 f"Error al eliminar objeto {id_objeto}: {e}"
             ) from e
     
-    # ========================================================================
     # OPERACIONES ESPECÍFICAS DE PLANETAS
-    # ========================================================================
     
     async def crear_planeta(self, datos: Planeta) -> Planeta:
         """
@@ -564,9 +560,7 @@ class RepositorioObjetos:
                 f"Error al listar planetas por habitabilidad: {e}"
             ) from e
     
-    # ========================================================================
     # OPERACIONES DE CARACTERÍSTICAS AMBIENTALES
-    # ========================================================================
     
     async def obtener_caracteristicas_ambientales(
         self,

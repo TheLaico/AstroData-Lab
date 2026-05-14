@@ -27,9 +27,7 @@ class RepositorioDocumentos:
     para encontrar embeddings más similares a una consulta.
     """
 
-    # ========================================================================
     # OPERACIONES CRUD DE DOCUMENTO
-    # ========================================================================
 
     async def crear_documento(self, datos: Documento) -> Documento:
         """
@@ -214,9 +212,7 @@ class RepositorioDocumentos:
                 f"Error al listar documentos del objeto {id_objeto}: {e}"
             ) from e
 
-    # ========================================================================
     # OPERACIONES CRUD DE IMAGEN
-    # ========================================================================
 
     async def crear_imagen(self, datos: Imagen) -> Imagen:
         """
@@ -273,9 +269,7 @@ class RepositorioDocumentos:
                 f"Error al crear imagen: {e}"
             ) from e
 
-    # ========================================================================
     # OPERACIONES DE EMBEDDINGS DE TEXTO (pgvector)
-    # ========================================================================
 
     async def guardar_embedding_texto(
         self,
@@ -487,9 +481,7 @@ class RepositorioDocumentos:
                 f"Error al buscar chunks similares: {e}"
             ) from e
 
-    # ========================================================================
     # OPERACIONES DE EMBEDDINGS DE IMAGEN (pgvector)
-    # ========================================================================
 
     async def guardar_embedding_imagen(
         self,

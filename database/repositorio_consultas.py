@@ -27,9 +27,9 @@ class RepositorioConsultas:
     4. Recuperar resultados completos → obtener_resultados_por_consulta()
     """
     
-    # ========================================================================
+    
     # OPERACIONES CRUD DE CONSULTA
-    # ========================================================================
+    
     
     async def registrar_consulta(self, datos: ConsultaEntrada) -> Consulta:
         """
@@ -222,9 +222,9 @@ class RepositorioConsultas:
                 f"Error al listar consultas del usuario {id_usuario}: {e}"
             ) from e
 
-    # ========================================================================
+    
     # OPERACIONES DE EMBEDDINGS DE CONSULTA (pgvector)
-    # ========================================================================
+    
 
     async def guardar_embedding_consulta(
         self,
@@ -291,9 +291,9 @@ class RepositorioConsultas:
                 f"Error al guardar embedding de consulta {id_consulta}: {e}"
             ) from e
 
-    # ========================================================================
+    
     # OPERACIONES CRUD DE RESULTADO
-    # ========================================================================
+    
     
     async def registrar_resultado(self, datos: Resultado) -> Resultado:
         """

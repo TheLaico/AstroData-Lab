@@ -38,9 +38,7 @@ class RepositorioEvaluaciones:
     - Comparar condiciones entre planetas similares
     """
     
-    # ========================================================================
     # OPERACIONES CRUD DE EVALUACIÓN RAGAS
-    # ========================================================================
     
     async def registrar_evaluacion_ragas(
         self,
@@ -366,9 +364,7 @@ class RepositorioEvaluaciones:
                 f"Error al calcular resumen del usuario {id_usuario}: {e}"
             ) from e
     
-    # ========================================================================
     # OPERACIONES CRUD DE EVALUACIÓN DE HABITABILIDAD
-    # ========================================================================
     
     async def registrar_evaluacion_habitabilidad(
         self,
