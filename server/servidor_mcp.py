@@ -125,6 +125,18 @@ class GrupoGestionObjetos(ToolGroup):
             return await self._tools.crear_documento_con_embeddings(**argumentos)
         if nombre_tool == "crear_imagen_con_embedding":
             return await self._tools.crear_imagen_con_embedding(**argumentos)
+        if nombre_tool == "crear_telescopio":
+            return await self._tools.crear_telescopio(**argumentos)
+        if nombre_tool == "obtener_telescopio":
+            return await self._tools.obtener_telescopio(**argumentos)
+        if nombre_tool == "listar_telescopios":
+            return await self._tools.listar_telescopios(**argumentos)
+        if nombre_tool == "crear_observacion":
+            return await self._tools.crear_observacion(**argumentos)
+        if nombre_tool == "listar_observaciones_por_objeto":
+            return await self._tools.listar_observaciones_por_objeto(**argumentos)
+        if nombre_tool == "listar_observaciones_por_telescopio":
+            return await self._tools.listar_observaciones_por_telescopio(**argumentos)
         return {'error': f'Herramienta desconocida en GrupoGestionObjetos: {nombre_tool}'}
 
 

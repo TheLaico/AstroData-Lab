@@ -17,12 +17,13 @@ permitir búsquedas semánticas posteriores.
 """
 
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, date
 import re
 from mcp.types import Tool, TextContent
 
 from database.repositorio_objetos import RepositorioObjetos
 from database.repositorio_documentos import RepositorioDocumentos
+from database.repositorio_observaciones import RepositorioObservaciones
 from embeddings.interfaz_codificador import CodificadorBase
 from models.base_objeto_astronomico import ObjetoAstronomico
 from models.galaxia_model import Galaxia
@@ -79,6 +80,7 @@ class GestionObjetos:
         self._codificador = codificador
         self._repo_objetos = RepositorioObjetos()
         self._repo_documentos = RepositorioDocumentos()
+        self._repo_observaciones = RepositorioObservaciones()
 
     def _chunificar_texto(
         self,
@@ -990,6 +992,228 @@ class GestionObjetos:
                 'total': 0
             }
 
+    async def crear_telescopio(
+        self,
+        nombre: str,
+        tipo: Optional[str] = None,
+        ubicacion: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Crea un nuevo telescopio en la base de datos.
+        """
+        try:
+            if not nombre or not nombre.strip():
+                return {
+                    'error': 'El nombre del telescopio no puede estar vacío',
+                    'detalles': ''
+                }
+
+            telescopio = await self._repo_observaciones.crear_telescopio(
+                nombre=nombre.strip(),
+                tipo=tipo.strip() if tipo and tipo.strip() else None,
+                ubicacion=ubicacion.strip() if ubicacion and ubicacion.strip() else None
+            )
+
+            return {
+                'id_telescopio': telescopio.id_telescopio,
+                'nombre': telescopio.nombre,
+                'tipo': telescopio.tipo,
+                'ubicacion': telescopio.ubicacion
+            }
+
+        except Exception as e:
+            return {
+                'error': 'Error al crear telescopio',
+                'detalles': str(e)
+            }
+
+    async def obtener_telescopio(
+        self,
+        id_telescopio: int
+    ) -> Dict[str, Any]:
+        """
+        Recupera un telescopio por su ID.
+        """
+        try:
+            telescopio = await self._repo_observaciones.obtener_telescopio_por_id(
+                id_telescopio
+            )
+
+            if telescopio is None:
+                return {
+                    'error': 'Telescopio no encontrado',
+                    'detalles': f'ID: {id_telescopio}'
+                }
+
+            return {
+                'id_telescopio': telescopio.id_telescopio,
+                'nombre': telescopio.nombre,
+                'tipo': telescopio.tipo,
+                'ubicacion': telescopio.ubicacion
+            }
+
+        except Exception as e:
+            return {
+                'error': 'Error al obtener telescopio',
+                'detalles': str(e)
+            }
+
+    async def listar_telescopios(self) -> Dict[str, Any]:
+        """
+        Lista todos los telescopios registrados.
+        """
+        try:
+            telescopios = await self._repo_observaciones.listar_telescopios()
+            return {
+                'telescopios': [
+                    {
+                        'id_telescopio': tel.id_telescopio,
+                        'nombre': tel.nombre,
+                        'tipo': tel.tipo,
+                        'ubicacion': tel.ubicacion
+                    }
+                    for tel in telescopios
+                ],
+                'total': len(telescopios)
+            }
+
+        except Exception as e:
+            return {
+                'error': 'Error al listar telescopios',
+                'detalles': str(e),
+                'telescopios': [],
+                'total': 0
+            }
+
+    async def crear_observacion(
+        self,
+        id_telescopio: int,
+        id_objeto: int,
+        fecha: str,
+        descripcion: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Registra una observación astronómica en la base de datos.
+        """
+        try:
+            if id_telescopio <= 0:
+                return {
+                    'error': 'id_telescopio debe ser positivo',
+                    'detalles': ''
+                }
+            if id_objeto <= 0:
+                return {
+                    'error': 'id_objeto debe ser positivo',
+                    'detalles': ''
+                }
+            if not fecha or not fecha.strip():
+                return {
+                    'error': 'La fecha de la observación no puede estar vacía',
+                    'detalles': ''
+                }
+
+            if isinstance(fecha, str):
+                fecha_value = date.fromisoformat(fecha.strip())
+            elif isinstance(fecha, date):
+                fecha_value = fecha
+            else:
+                return {
+                    'error': 'La fecha debe ser una cadena ISO o un objeto date',
+                    'detalles': str(fecha)
+                }
+
+            observacion = await self._repo_observaciones.crear_observacion(
+                id_telescopio=id_telescopio,
+                id_objeto=id_objeto,
+                fecha=fecha_value,
+                descripcion=descripcion.strip() if descripcion and descripcion.strip() else None
+            )
+
+            return {
+                'id_observacion': observacion.id_observacion,
+                'id_telescopio': observacion.id_telescopio,
+                'id_objeto': observacion.id_objeto,
+                'fecha': observacion.fecha.isoformat(),
+                'descripcion': observacion.descripcion
+            }
+
+        except ValueError as e:
+            return {
+                'error': str(e),
+                'detalles': ''
+            }
+        except Exception as e:
+            return {
+                'error': 'Error al crear observación',
+                'detalles': str(e)
+            }
+
+    async def listar_observaciones_por_objeto(
+        self,
+        id_objeto: int
+    ) -> Dict[str, Any]:
+        """
+        Lista observaciones para un objeto astronómico específico.
+        """
+        try:
+            observaciones = await self._repo_observaciones.listar_observaciones_por_objeto(
+                id_objeto
+            )
+            return {
+                'observaciones': [
+                    {
+                        'id_observacion': obs.id_observacion,
+                        'id_telescopio': obs.id_telescopio,
+                        'id_objeto': obs.id_objeto,
+                        'fecha': obs.fecha.isoformat(),
+                        'descripcion': obs.descripcion
+                    }
+                    for obs in observaciones
+                ],
+                'total': len(observaciones)
+            }
+
+        except Exception as e:
+            return {
+                'error': 'Error al listar observaciones por objeto',
+                'detalles': str(e),
+                'observaciones': [],
+                'total': 0
+            }
+
+    async def listar_observaciones_por_telescopio(
+        self,
+        id_telescopio: int
+    ) -> Dict[str, Any]:
+        """
+        Lista observaciones asociadas a un telescopio específico.
+        """
+        try:
+            observaciones = await self._repo_observaciones.listar_observaciones_por_telescopio(
+                id_telescopio
+            )
+            return {
+                'observaciones': [
+                    {
+                        'id_observacion': obs.id_observacion,
+                        'id_telescopio': obs.id_telescopio,
+                        'id_objeto': obs.id_objeto,
+                        'fecha': obs.fecha.isoformat(),
+                        'descripcion': obs.descripcion
+                    }
+                    for obs in observaciones
+                ],
+                'total': len(observaciones)
+            }
+
+        except Exception as e:
+            return {
+                'error': 'Error al listar observaciones por telescopio',
+                'detalles': str(e),
+                'observaciones': [],
+                'total': 0
+            }
+
     def obtener_definiciones_tools(self) -> List[Tool]:
         """
         Retorna las definiciones de herramientas MCP para registro en el servidor.
@@ -1184,6 +1408,105 @@ class GestionObjetos:
                         }
                     },
                     "required": ["ruta_archivo", "descripcion", "id_doc"]
+                }
+            ),
+            Tool(
+                name="crear_telescopio",
+                description="Registra un nuevo telescopio en el sistema con nombre, tipo y ubicación opcionales.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "nombre": {
+                            "type": "string",
+                            "description": "Nombre del telescopio"
+                        },
+                        "tipo": {
+                            "type": "string",
+                            "description": "Tipo de telescopio (ej: 'óptico', 'radio', 'infrarrojo')"
+                        },
+                        "ubicacion": {
+                            "type": "string",
+                            "description": "Ubicación física del telescopio"
+                        }
+                    },
+                    "required": ["nombre"]
+                }
+            ),
+            Tool(
+                name="obtener_telescopio",
+                description="Obtiene los detalles de un telescopio por su identificador.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_telescopio": {
+                            "type": "integer",
+                            "description": "ID del telescopio"
+                        }
+                    },
+                    "required": ["id_telescopio"]
+                }
+            ),
+            Tool(
+                name="listar_telescopios",
+                description="Lista todos los telescopios registrados en la base de datos.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
+            Tool(
+                name="crear_observacion",
+                description="Registra una observación astronómica realizada con un telescopio sobre un objeto.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_telescopio": {
+                            "type": "integer",
+                            "description": "ID del telescopio que realizó la observación"
+                        },
+                        "id_objeto": {
+                            "type": "integer",
+                            "description": "ID del objeto astronómico observado"
+                        },
+                        "fecha": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Fecha de la observación en formato ISO (YYYY-MM-DD)"
+                        },
+                        "descripcion": {
+                            "type": "string",
+                            "description": "Descripción adicional de la observación"
+                        }
+                    },
+                    "required": ["id_telescopio", "id_objeto", "fecha"]
+                }
+            ),
+            Tool(
+                name="listar_observaciones_por_objeto",
+                description="Lista observaciones asociadas a un objeto astronómico.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_objeto": {
+                            "type": "integer",
+                            "description": "ID del objeto astronómico"
+                        }
+                    },
+                    "required": ["id_objeto"]
+                }
+            ),
+            Tool(
+                name="listar_observaciones_por_telescopio",
+                description="Lista observaciones registradas por un telescopio específico.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_telescopio": {
+                            "type": "integer",
+                            "description": "ID del telescopio"
+                        }
+                    },
+                    "required": ["id_telescopio"]
                 }
             )
         ]

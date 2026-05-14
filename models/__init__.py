@@ -20,3 +20,7 @@ from .caracteristica_ambiental_model import CaracteristicaAmbiental
 from .tipo_galaxia_model import TipoGalaxia
 from .tipo_estrella_model import TipoEstrella
 from .tipo_planeta_model import TipoPlaneta
+from .telescopio_model import Telescopio
+from .observacion_model import Observacion
+from .embedding_texto_model import EmbeddingTexto
+from .embedding_imagen_model import EmbeddingImagen
