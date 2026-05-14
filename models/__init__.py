@@ -1,26 +1,27 @@
-from .usuario_model import Usuario
-from .consulta_entrada_model import ConsultaEntrada
-from .consulta_model import Consulta
-from .embedding_consulta_model import EmbeddingConsulta
-from .documento_model import Documento
-from .imagen_model import Imagen
-from .resultado_model import Resultado
-from .resultado_detallado_model import ResultadoDetallado
-from .evaluacion_ragas_model import EvaluacionRAGAS
-from .evaluacion_ragas_entrada_model import EvaluacionRAGASEntrada
-from .evaluacion_habitabilidad_model import EvaluacionHabitabilidad
-from .resumen_evaluacion_model import ResumenEvaluacion
-from .base_objeto_astronomico import ObjetoAstronomico
-from .galaxia_model import Galaxia
-from .sistema_estelar_model import SistemaEstelar
-from .estrella_model import Estrella
-from .planeta_model import Planeta
-from .luna_model import Luna
-from .caracteristica_ambiental_model import CaracteristicaAmbiental
-from .tipo_galaxia_model import TipoGalaxia
-from .tipo_estrella_model import TipoEstrella
-from .tipo_planeta_model import TipoPlaneta
-from .telescopio_model import Telescopio
-from .observacion_model import Observacion
-from .embedding_texto_model import EmbeddingTexto
-from .embedding_imagen_model import EmbeddingImagen
+"""
+Paquete Models - Reestructurado en 6 módulos funcionales.
+
+Módulos:
+- sql_queries: Consultas SQL estructuradas
+- embeddings: Generación y gestión de embeddings
+- semantic_search: Búsqueda semántica con pgvector
+- rag_generation: Pipeline RAG completo
+- ragas_evaluation: Evaluación de calidad RAGAS
+- domain: Modelos de entidades del negocio
+"""
+
+from . import sql_queries
+from . import embeddings
+from . import semantic_search
+from . import rag_generation
+from . import ragas_evaluation
+from . import domain
+
+__all__ = [
+    "sql_queries",
+    "embeddings",
+    "semantic_search",
+    "rag_generation",
+    "ragas_evaluation",
+    "domain",
+]
