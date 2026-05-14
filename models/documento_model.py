@@ -7,7 +7,7 @@ por el sistema.
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import date
 
 
 class Documento(BaseModel):
@@ -29,7 +29,7 @@ class Documento(BaseModel):
         None,
         description="Código de idioma del documento (ej: 'es', 'en')"
     )
-    fecha: Optional[datetime] = Field(
+    fecha: Optional[date] = Field(
         None,
         description="Fecha de publicación o ingesta del documento"
     )

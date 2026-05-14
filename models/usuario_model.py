@@ -7,7 +7,7 @@ registrado en el sistema.
 
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import date
 
 
 class Usuario(BaseModel):
@@ -20,9 +20,9 @@ class Usuario(BaseModel):
     id_usuario: int = Field(..., description='Identificador único del usuario')
     nombre: str = Field(..., description='Nombre completo del usuario')
     correo: str = Field(..., description='Dirección de correo electrónico del usuario')
-    fecha_registro: Optional[datetime] = Field(
+    fecha_registro: Optional[date] = Field(
         None,
-        description='Fecha y hora en que el usuario se registró en el sistema'
+        description='Fecha en que el usuario se registró en el sistema'
     )
 
     @field_validator('correo')

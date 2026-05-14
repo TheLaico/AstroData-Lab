@@ -7,7 +7,7 @@ de habitabilidad de un planeta.
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import date
 
 
 class EvaluacionHabitabilidad(BaseModel):
@@ -30,4 +30,4 @@ class EvaluacionHabitabilidad(BaseModel):
         None,
         description="Análisis detallado de factores de habitabilidad"
     )
-    fecha: datetime = Field(..., description="Fecha y hora de la evaluación")
+    fecha: date = Field(..., description="Fecha de la evaluación")

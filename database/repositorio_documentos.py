@@ -262,7 +262,7 @@ class RepositorioDocumentos:
                     """,
                     datos.ruta_archivo.strip(),
                     datos.descripcion,
-                    datos.etiquetas,
+                    self._serializar_etiquetas(datos.etiquetas),
                     datos.id_doc
                 )
 
@@ -277,6 +277,11 @@ class RepositorioDocumentos:
     # ========================================================================
     # OPERACIONES DE EMBEDDINGS DE TEXTO (pgvector)
     # ========================================================================
+
+    def _serializar_etiquetas(self, etiquetas: Optional[List[str]]) -> Optional[str]:
+        if etiquetas is None:
+            return None
+        return ",".join(str(tag).strip() for tag in etiquetas if tag is not None and str(tag).strip())
 
     async def guardar_embedding_texto(
         self,

@@ -440,11 +440,15 @@ class RepositorioConsultas:
                     
                     imagen = None
                     if fila['i_id_imagen']:
+                        etiquetas = fila['etiquetas']
+                        if isinstance(etiquetas, str):
+                            etiquetas = [tag.strip() for tag in etiquetas.split(',') if tag.strip()]
+
                         imagen = Imagen(
                             id_imagen=fila['i_id_imagen'],
                             ruta_archivo=fila['ruta_archivo'],
                             descripcion=fila['i_descripcion'],
-                            etiquetas=fila['etiquetas'],
+                            etiquetas=etiquetas,
                             id_doc=fila['i_id_doc']
                         )
                     
