@@ -17,7 +17,7 @@ from database.repositorio_consultas import RepositorioConsultas
 from database.repositorio_documentos import RepositorioDocumentos
 from database.repositorio_objetos import RepositorioObjetos
 from embeddings.interfaz_codificador import CodificadorBase
-from models.consulta import ConsultaEntrada
+from models.consulta_entrada_model import ConsultaEntrada
 
 
 class ToolsConsultaRAG:

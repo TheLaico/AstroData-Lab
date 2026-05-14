@@ -24,11 +24,9 @@ from collections import Counter
 
 from database.repositorio_evaluaciones import RepositorioEvaluaciones
 from database.repositorio_consultas import RepositorioConsultas
-from models.evaluacion import (
-    EvaluacionRAGASEntrada,
-    EvaluacionRAGAS,
-    ResumenEvaluacion,
-)
+from models.evaluacion_ragas_entrada_model import EvaluacionRAGASEntrada
+from models.evaluacion_ragas_model import EvaluacionRAGAS
+from models.resumen_evaluacion_model import ResumenEvaluacion
 
 
 class ToolsEvaluacionRAGAS:

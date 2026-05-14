@@ -8,16 +8,17 @@ Encapsula consultas SQL y manejo de transacciones con asyncpg.
 
 from typing import List, Optional
 from database.conexion import conexion_bd
-from models.objeto_astronomico import (
-    ObjetoAstronomico,
-    Galaxia,
-    SistemaEstelar,
-    Estrella,
-    Planeta,
-    Luna,
-    CaracteristicaAmbiental,
-)
-from models.evaluacion import EvaluacionHabitabilidad
+from models.tipo_galaxia_model import TipoGalaxia
+from models.tipo_estrella_model import TipoEstrella
+from models.tipo_planeta_model import TipoPlaneta
+from models.base_objeto_astronomico import ObjetoAstronomico
+from models.galaxia_model import Galaxia
+from models.sistema_estelar_model import SistemaEstelar
+from models.estrella_model import Estrella
+from models.planeta_model import Planeta
+from models.luna_model import Luna
+from models.caracteristica_ambiental_model import CaracteristicaAmbiental
+from models.evaluacion_habitabilidad_model import EvaluacionHabitabilidad
 
 class RepositorioObjetos:
     """

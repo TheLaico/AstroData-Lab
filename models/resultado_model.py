@@ -1,18 +1,12 @@
 """
-Módulo de modelos de datos para resultados en AstroData Lab.
+Modelo de resultado para AstroData Lab.
 
-Define la estructura de entidades relacionadas con resultados de búsqueda RAG
-y puntuaciones de relevancia. Los modelos de documento e imagen residen en
-models.documento.
+Contiene la entidad Resultado utilizada para representar resultados de
+búsqueda y recuperación del sistema RAG.
 """
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from models.documento import Documento, Imagen
-
-
-
-# MODELO DE RESULTADO
 
 
 class Resultado(BaseModel):
@@ -42,26 +36,4 @@ class Resultado(BaseModel):
     id_imagen: Optional[int] = Field(
         None,
         description="Referencia opcional a la imagen recuperada"
-    )
-
-
-
-# MODELO DE RESULTADO DETALLADO
-
-
-class ResultadoDetallado(Resultado):
-    """
-    Extiende Resultado con datos completos del documento e imagen asociados.
-
-    Se utiliza para respuestas enriquecidas al usuario, proporcionando no solo
-    la puntuación de relevancia sino también el contenido completo del documento
-    y los detalles de la imagen para presentación integral en la interfaz.
-    """
-    documento: Optional[Documento] = Field(
-        None,
-        description="Objeto Documento completo asociado al resultado"
-    )
-    imagen: Optional[Imagen] = Field(
-        None,
-        description="Objeto Imagen completa asociada al resultado"
     )

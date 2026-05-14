@@ -19,7 +19,7 @@ from datetime import datetime, date
 def evaluacion_ragas_mock():
     """Fixture con EvaluacionRAGAS de ejemplo con valores conocidos
     para validar los cálculos de promedio y calificación."""
-    from models.evaluacion import EvaluacionRAGAS
+    from models.evaluacion_ragas_model import EvaluacionRAGAS
     return EvaluacionRAGAS(
         id_evaluacion=1,
         faithfulness=0.90,
@@ -50,7 +50,7 @@ def mock_repo_evaluaciones(evaluacion_ragas_mock):
     repo.registrar_evaluacion_ragas = AsyncMock(return_value=evaluacion_ragas_mock)
     repo.listar_evaluaciones_por_usuario = AsyncMock(return_value=[evaluacion_ragas_mock])
 
-    from models.evaluacion import ResumenEvaluacion
+    from models.resumen_evaluacion_model import ResumenEvaluacion
     resumen_mock = ResumenEvaluacion(evaluacion=evaluacion_ragas_mock)
     repo.calcular_resumen_usuario = AsyncMock(return_value=resumen_mock)
     return repo
@@ -117,12 +117,12 @@ async def test_evaluar_respuesta_retorna_calificacion(
 
 
 @pytest.mark.asyncio
-async def test_calificacion_alta_cuando_promedio_mayor_08(
+async def test_calificacion_alta_cuando_promedio_mayor_07(
     mock_repo_consultas
 ):
-    """Verifica que cuando el promedio de las tres métricas sea mayor a 0.8,
+    """Verifica que cuando el promedio de las tres métricas sea mayor a 0.7,
     la calificación retornada sea 'alta'."""
-    from models.evaluacion import EvaluacionRAGAS
+    from models.evaluacion_ragas_model import EvaluacionRAGAS
     eval_alta = EvaluacionRAGAS(
         id_evaluacion=2, faithfulness=0.85, answer_relevancy=0.90,
         context_recall=0.88, modelo_eval="test", fecha=datetime.now(), id_consulta=42
@@ -145,7 +145,7 @@ async def test_calificacion_alta_cuando_promedio_mayor_08(
         )
 
     promedio = resultado["promedio_metricas"]
-    assert promedio > 0.8
+    assert promedio > 0.7  # Corregido: umbral de clasificación "alta" es > 0.7
     assert resultado["calidad"] == "alta"
 
 
@@ -155,7 +155,7 @@ async def test_calificacion_baja_cuando_promedio_menor_05(
 ):
     """Verifica que cuando el promedio de las tres métricas sea menor a 0.5,
     la calificación retornada sea 'baja'."""
-    from models.evaluacion import EvaluacionRAGAS
+    from models.evaluacion_ragas_model import EvaluacionRAGAS
     eval_baja = EvaluacionRAGAS(
         id_evaluacion=3, faithfulness=0.10, answer_relevancy=0.15,
         context_recall=0.20, modelo_eval="test", fecha=datetime.now(), id_consulta=42

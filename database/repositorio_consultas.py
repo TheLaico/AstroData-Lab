@@ -9,8 +9,13 @@ de persistencia relacionada con el flujo de pregunta-respuesta del sistema.
 from typing import List, Optional
 from datetime import datetime
 from database.conexion import conexion_bd
-from models.consulta import ConsultaEntrada, Consulta, Usuario
-from models.resultado import Resultado, ResultadoDetallado, Documento, Imagen
+from models.consulta_entrada_model import ConsultaEntrada
+from models.consulta_model import Consulta
+from models.usuario_model import Usuario
+from models.resultado_model import Resultado
+from models.resultado_detallado_model import ResultadoDetallado
+from models.documento_model import Documento
+from models.imagen_model import Imagen
 
 
 class RepositorioConsultas:

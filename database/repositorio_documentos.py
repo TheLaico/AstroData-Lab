@@ -8,7 +8,8 @@ como la capa vectorial (pgvector con Embedding_Texto e Embedding_Imagen).
 
 from typing import List, Optional
 from database.conexion import conexion_bd
-from models.documento import Documento, Imagen
+from models.documento_model import Documento
+from models.imagen_model import Imagen
 
 
 class RepositorioDocumentos:

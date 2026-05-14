@@ -121,6 +121,10 @@ class GrupoGestionObjetos(ToolGroup):
             return await self._tools.eliminar_objeto_astronomico(**argumentos)
         if nombre_tool == "listar_planetas_habitables":
             return await self._tools.listar_planetas_habitables(**argumentos)
+        if nombre_tool == "crear_documento_con_embeddings":
+            return await self._tools.crear_documento_con_embeddings(**argumentos)
+        if nombre_tool == "crear_imagen_con_embedding":
+            return await self._tools.crear_imagen_con_embedding(**argumentos)
         return {'error': f'Herramienta desconocida en GrupoGestionObjetos: {nombre_tool}'}
 
 

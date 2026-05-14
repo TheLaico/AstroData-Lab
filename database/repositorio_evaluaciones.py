@@ -9,12 +9,10 @@ agregados de calidad del sistema.
 from typing import List, Optional
 from datetime import date, datetime
 from database.conexion import conexion_bd
-from models.evaluacion import (
-    EvaluacionRAGAS,
-    EvaluacionRAGASEntrada,
-    EvaluacionHabitabilidad,
-    ResumenEvaluacion,
-)
+from models.evaluacion_ragas_model import EvaluacionRAGAS
+from models.evaluacion_ragas_entrada_model import EvaluacionRAGASEntrada
+from models.evaluacion_habitabilidad_model import EvaluacionHabitabilidad
+from models.resumen_evaluacion_model import ResumenEvaluacion
 
 
 class RepositorioEvaluaciones:
