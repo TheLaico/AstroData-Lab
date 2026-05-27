@@ -1,17 +1,22 @@
 """
 Módulo de codificador de embeddings de imagen para AstroData Lab.
 
-Implementa la interfaz CodificadorBase usando CLIP (Contrastive Language-Image Pre-training),
-que proporciona capacidades multimodales para generar embeddings de imágenes y textos en
-un espacio vectorial compartido. Se utiliza para vectorizar imágenes astronómicas y buscar
+Implementa la interfaz CodificadorBase usando CLIP (Contrastive Language-Image
+Pre-training). Se utiliza para vectorizar imágenes astronómicas y buscar
 imágenes similares por descripción textual.
+
+CAMBIO v2: todos los métodos de inferencia usan run_in_executor para no
+bloquear el event loop de asyncio durante el cómputo síncrono de PyTorch.
 """
 
+import asyncio
 from pathlib import Path
 from typing import List
+
+import torch
 from PIL import Image
 from transformers import CLIPModel, CLIPProcessor
-import torch
+
 from config.ajustes import ajustes
 from embeddings.interfaz_codificador import CodificadorBase
 
@@ -19,280 +24,246 @@ from embeddings.interfaz_codificador import CodificadorBase
 class CodificadorImagen(CodificadorBase):
     """
     Implementación concreta de CodificadorBase para embeddings de imagen con CLIP.
-    
-    Utiliza OpenAI's CLIP (vision-language model) para generar vectores densos
-    que capturan contenido visual de imágenes astronómicas. Soporta búsqueda
-    cruzada: buscar imágenes con descripción textual en el mismo espacio vectorial.
-    
-    El modelo y procesador se cargan una sola vez al instanciar para eficiencia.
-    Se obtiene desde ajustes.modelo_imagen para permitir cambiar modelo sin modificar código.
-    
+
+    Utiliza OpenAI's CLIP para generar vectores densos que capturan contenido
+    visual de imágenes astronómicas.
+
+    IMPORTANTE: CLIP corre sobre PyTorch síncrono. Todos los métodos de
+    codificación delegan al ThreadPoolExecutor por defecto de asyncio mediante
+    run_in_executor para no bloquear el event loop del servidor MCP.
+
     Atributos:
         _modelo: Instancia cargada del CLIPModel
-        _procesador: Instancia de CLIPProcessor para preparar imágenes y textos
+        _procesador: Instancia de CLIPProcessor
         _nombre_modelo: Identificador del modelo para registro en BD
-        _dimension: Dimensión del vector embedding (típicamente 512 para CLIP ViT-base)
-        _device: Dispositivo torch ('cuda' si GPU disponible, 'cpu' en otro caso)
+        _dimension: Dimensión del vector embedding (512 para CLIP ViT-base)
+        _device: Dispositivo torch ('cuda' o 'cpu')
     """
-    
+
     def __init__(self) -> None:
         """
-        Inicializa el codificador cargando el modelo CLIP y su procesador.
-        
-        Lee el nombre del modelo desde ajustes.modelo_imagen. Descarga de HuggingFace
-        la primera vez (cachea en ~/.cache/huggingface). Usa GPU si está disponible.
-        
+        Inicializa el codificador cargando CLIP y su procesador.
+
         Raises:
-            RuntimeError: Si falla la descarga o carga del modelo
-            ValueError: Si el nombre del modelo no existe en HuggingFace
+            RuntimeError: Si falla la carga del modelo
         """
         try:
-            self._nombre_modelo = ajustes.modelo_imagen
+            self._nombre_modelo: str = ajustes.modelo_imagen
             self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            
-            # Cargar modelo y procesador desde HuggingFace
-            self._procesador = CLIPProcessor.from_pretrained(self._nombre_modelo)
-            self._modelo = CLIPModel.from_pretrained(self._nombre_modelo)
+            self._procesador: CLIPProcessor = CLIPProcessor.from_pretrained(self._nombre_modelo)
+            self._modelo: CLIPModel = CLIPModel.from_pretrained(self._nombre_modelo)
             self._modelo.to(self._device)
-            self._modelo.eval()  # Modo evaluación (sin gradientes)
-            
-            self._dimension = ajustes.dimension_vector_imagen
-        
+            self._modelo.eval()
+            self._dimension: int = ajustes.dimension_vector_imagen
         except Exception as e:
             raise RuntimeError(
-                f"Error al cargar el modelo CLIP '{self._nombre_modelo}': {e}"
+                f"Error al cargar el modelo CLIP '{ajustes.modelo_imagen}': {e}"
             ) from e
-    
+
+    # ------------------------------------------------------------------
+    # Helpers síncronos — se ejecutan en el ThreadPoolExecutor
+    # ------------------------------------------------------------------
+
+    def _encode_imagen_sync(self, ruta_imagen: str) -> List[float]:
+        """
+        Codifica una imagen de forma síncrona. Solo llamar desde run_in_executor.
+
+        Args:
+            ruta_imagen: Ruta al archivo de imagen ya validada.
+
+        Returns:
+            Lista de flotantes con el embedding normalizado.
+        """
+        imagen = Image.open(ruta_imagen).convert('RGB')
+        entradas = self._procesador(images=imagen, return_tensors='pt', padding=True)
+        entradas = {k: v.to(self._device) for k, v in entradas.items()}
+
+        with torch.no_grad():
+            salida = self._modelo(**entradas)
+            embedding = salida.image_embeds[0]
+
+        embedding_normalizado = embedding / embedding.norm()
+        return embedding_normalizado.cpu().tolist()
+
+    def _encode_texto_sync(self, texto: str) -> List[float]:
+        """
+        Codifica un texto en espacio CLIP de forma síncrona. Solo llamar desde run_in_executor.
+
+        Args:
+            texto: Texto ya normalizado.
+
+        Returns:
+            Lista de flotantes con el embedding normalizado.
+        """
+        entradas = self._procesador(text=texto, return_tensors='pt', padding=True)
+        entradas = {k: v.to(self._device) for k, v in entradas.items()}
+
+        with torch.no_grad():
+            salida = self._modelo(**entradas)
+            embedding = salida.text_embeds[0]
+
+        embedding_normalizado = embedding / embedding.norm()
+        return embedding_normalizado.cpu().tolist()
+
+    def _encode_textos_sync(self, textos: List[str]) -> List[List[float]]:
+        """
+        Codifica batch de textos en espacio CLIP de forma síncrona. Solo llamar desde run_in_executor.
+
+        Args:
+            textos: Lista de textos ya normalizados.
+
+        Returns:
+            Lista de listas de flotantes.
+        """
+        entradas = self._procesador(text=textos, return_tensors='pt', padding=True)
+        entradas = {k: v.to(self._device) for k, v in entradas.items()}
+
+        with torch.no_grad():
+            salida = self._modelo(**entradas)
+            embeddings = salida.text_embeds
+
+        embeddings_normalizados = embeddings / embeddings.norm(dim=1, keepdim=True)
+        return embeddings_normalizados.cpu().tolist()
+
+    # ------------------------------------------------------------------
+    # Interfaz pública async — delegan al executor para no bloquear el loop
+    # ------------------------------------------------------------------
+
     async def codificar_imagen(self, ruta_imagen: str) -> List[float]:
         """
         Codifica una imagen en un vector embedding de 512 dimensiones.
-        
-        Carga la imagen desde archivo (soporta FITS, PNG, JPEG, TIFF, WebP),
-        la procesa con CLIPProcessor y extrae el embedding visual. Valida que
-        el archivo exista antes de procesarlo.
-        
+
+        Delega la inferencia de CLIP a un hilo separado para no bloquear
+        el event loop de asyncio.
+
         Args:
             ruta_imagen: Ruta absoluta o relativa al archivo de imagen.
-        
+
         Returns:
             Lista de 512 flotantes representando características visuales.
-        
+
         Raises:
             FileNotFoundError: Si el archivo no existe
-            ValueError: Si el formato no es soportado
+            ValueError: Si el formato no es soportado o la ruta es inválida
             RuntimeError: Si hay error en la codificación
-        
-        Example:
-            >>> codificador = CodificadorImagen()
-            >>> embedding = await codificador.codificar_imagen("/datos/galaxias/m31.jpg")
-            >>> len(embedding)
-            512
         """
         if not isinstance(ruta_imagen, str):
             raise ValueError("La ruta debe ser una cadena de texto")
-        
-        try:
-            # Validar que el archivo existe
-            ruta_path = Path(ruta_imagen)
-            if not ruta_path.exists():
-                raise FileNotFoundError(
-                    f"El archivo de imagen no existe: {ruta_imagen}"
-                )
-            
-            # Verificar que es una imagen válida
-            formatos_soportados = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.fits'}
-            if ruta_path.suffix.lower() not in formatos_soportados:
-                raise ValueError(
-                    f"Formato de imagen no soportado: {ruta_path.suffix}. "
-                    f"Formatos válidos: {', '.join(formatos_soportados)}"
-                )
-            
-            # Cargar imagen
-            imagen = Image.open(ruta_imagen).convert('RGB')
-            
-            # Procesar con CLIP
-            entradas = self._procesador(
-                images=imagen,
-                return_tensors='pt',
-                padding=True
+
+        ruta_path = Path(ruta_imagen)
+        if not ruta_path.exists():
+            raise FileNotFoundError(f"El archivo de imagen no existe: {ruta_imagen}")
+
+        formatos_soportados = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.fits'}
+        if ruta_path.suffix.lower() not in formatos_soportados:
+            raise ValueError(
+                f"Formato no soportado: {ruta_path.suffix}. "
+                f"Válidos: {', '.join(formatos_soportados)}"
             )
-            entradas = {k: v.to(self._device) for k, v in entradas.items()}
-            
-            # Generar embedding de imagen
-            with torch.no_grad():
-                salida = self._modelo(**entradas)
-                embedding_imagen = salida.image_embeds[0]
-            
-            # Normalizar y convertir a List[float]
-            embedding_normalizado = embedding_imagen / embedding_imagen.norm()
-            return embedding_normalizado.cpu().tolist()
-        
-        except FileNotFoundError:
-            raise
-        except ValueError:
+
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                self._encode_imagen_sync,
+                ruta_imagen
+            )
+        except (FileNotFoundError, ValueError):
             raise
         except Exception as e:
-            raise RuntimeError(
-                f"Error al codificar imagen: {e}"
-            ) from e
-    
+            raise RuntimeError(f"Error al codificar imagen: {e}") from e
+
     async def codificar_texto(self, texto: str) -> List[float]:
         """
         Codifica un texto en el espacio vectorial CLIP (512 dimensiones).
-        
-        Permite búsqueda cruzada: buscar imágenes similares a una descripción textual
-        comparando este embedding de texto con embeddings de imágenes. El texto se
-        normaliza (strip, lowercase) antes de procesar.
-        
+
+        Permite búsqueda cruzada texto→imagen. Delega inferencia al executor.
+
         Args:
-            texto: Descripción textual de una imagen (ej: "galaxia espiral azul")
-        
+            texto: Descripción textual de una imagen.
+
         Returns:
             Lista de 512 flotantes en el mismo espacio que embeddings de imagen.
-        
+
         Raises:
             ValueError: Si el texto está vacío
             RuntimeError: Si hay error en la codificación
-        
-        Example:
-            >>> codificador = CodificadorImagen()
-            >>> embedding = await codificador.codificar_texto("galaxia espiral roja")
-            >>> len(embedding)
-            512
         """
         if not texto or not isinstance(texto, str):
             raise ValueError("El texto debe ser una cadena no vacía")
-        
+
+        texto_normalizado = texto.strip().lower()
+        if not texto_normalizado:
+            raise ValueError("El texto después de normalización está vacío")
+
         try:
-            # Normalizar el texto
-            texto_normalizado = texto.strip().lower()
-            
-            if not texto_normalizado:
-                raise ValueError("El texto después de normalización está vacío")
-            
-            # Procesar con CLIP
-            entradas = self._procesador(
-                text=texto_normalizado,
-                return_tensors='pt',
-                padding=True
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                self._encode_texto_sync,
+                texto_normalizado
             )
-            entradas = {k: v.to(self._device) for k, v in entradas.items()}
-            
-            # Generar embedding de texto
-            with torch.no_grad():
-                salida = self._modelo(**entradas)
-                embedding_texto = salida.text_embeds[0]
-            
-            # Normalizar y convertir a List[float]
-            embedding_normalizado = embedding_texto / embedding_texto.norm()
-            return embedding_normalizado.cpu().tolist()
-        
         except ValueError:
             raise
         except Exception as e:
-            raise RuntimeError(
-                f"Error al codificar texto con CLIP: {e}"
-            ) from e
-    
+            raise RuntimeError(f"Error al codificar texto con CLIP: {e}") from e
+
     async def codificar_textos(self, textos: List[str]) -> List[List[float]]:
         """
         Codifica una lista de textos en modo batch en el espacio CLIP.
-        
-        Procesa múltiples descripciones simultáneamente para máxima eficiencia.
-        Útil para generar embeddings de múltiples etiquetas o descripciones de imágenes.
-        
+
+        Delega inferencia al executor para no bloquear el event loop.
+
         Args:
             textos: Lista de descripciones textuales. Puede estar vacía.
-                    Cada elemento se normaliza igual que en codificar_texto().
-        
+
         Returns:
-            Lista de listas de 512 flotantes. Mantiene orden con entrada.
-        
+            Lista de listas de 512 flotantes.
+
         Raises:
-            ValueError: Si algún elemento no es string o está vacío tras normalización
+            ValueError: Si algún elemento no es string o está vacío
             RuntimeError: Si hay error en la codificación batch
-        
-        Example:
-            >>> codificador = CodificadorImagen()
-            >>> descripciones = ["galaxia espiral", "nebulosa roja", "cúmulo estelar"]
-            >>> embeddings = await codificador.codificar_textos(descripciones)
-            >>> len(embeddings)
-            3
-            >>> len(embeddings[0])
-            512
         """
         if not textos:
             return []
-        
+
+        textos_normalizados: List[str] = []
+        for texto in textos:
+            if not isinstance(texto, str):
+                raise ValueError(
+                    f"Todos los elementos deben ser strings, recibido: {type(texto)}"
+                )
+            texto_norm = texto.strip().lower()
+            if not texto_norm:
+                raise ValueError("Ningún texto puede estar vacío después de normalización")
+            textos_normalizados.append(texto_norm)
+
         try:
-            # Validar y normalizar todos los textos
-            textos_normalizados = []
-            for texto in textos:
-                if not isinstance(texto, str):
-                    raise ValueError(
-                        f"Todos los elementos deben ser strings, recibido: {type(texto)}"
-                    )
-                texto_norm = texto.strip().lower()
-                if not texto_norm:
-                    raise ValueError(
-                        "Ningún texto puede estar vacío después de normalización"
-                    )
-                textos_normalizados.append(texto_norm)
-            
-            # Procesar batch con CLIP
-            entradas = self._procesador(
-                text=textos_normalizados,
-                return_tensors='pt',
-                padding=True
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                self._encode_textos_sync,
+                textos_normalizados
             )
-            entradas = {k: v.to(self._device) for k, v in entradas.items()}
-            
-            # Generar embeddings de texto
-            with torch.no_grad():
-                salida = self._modelo(**entradas)
-                embeddings_texto = salida.text_embeds
-            
-            # Normalizar y convertir a List[List[float]]
-            embeddings_normalizados = embeddings_texto / embeddings_texto.norm(dim=1, keepdim=True)
-            return embeddings_normalizados.cpu().tolist()
-        
         except ValueError:
             raise
         except Exception as e:
-            raise RuntimeError(
-                f"Error al codificar batch de textos con CLIP: {e}"
-            ) from e
-    
+            raise RuntimeError(f"Error al codificar batch de textos con CLIP: {e}") from e
+
     async def dimension(self) -> int:
         """
         Retorna la dimensión del vector embedding de imagen CLIP.
-        
+
         Returns:
-            512 para openai/clip-vit-base-patch32, 768 para clip-vit-large-patch14, etc.
-            El valor específico se obtiene desde ajustes.dimension_vector_imagen.
-        
-        Example:
-            >>> codificador = CodificadorImagen()
-            >>> await codificador.dimension()
-            512
+            512 para openai/clip-vit-base-patch32.
         """
         return self._dimension
-    
+
     async def nombre_modelo(self) -> str:
         """
         Retorna el nombre del modelo CLIP utilizado.
-        
-        Se registra en tabla Embedding_Imagen para:
-        - Rastrear qué modelo generó cada embedding visual
-        - Permitir múltiples versiones de embeddings por imagen
-        - Comparar calidad entre modelos CLIP diferentes
-        
+
         Returns:
             Nombre del modelo (ej: 'openai/clip-vit-base-patch32')
-        
-        Example:
-            >>> codificador = CodificadorImagen()
-            >>> await codificador.nombre_modelo()
-            'openai/clip-vit-base-patch32'
         """
         return self._nombre_modelo

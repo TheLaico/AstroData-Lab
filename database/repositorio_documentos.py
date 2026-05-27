@@ -1,9 +1,16 @@
 """
 Módulo de repositorio para documentos e imágenes en AstroData Lab.
 
-Proporciona la capa de acceso a datos para documentos científicos, imágenes astronómicas
-y sus embeddings vectoriales. Gestiona tanto la capa relacional (tablas Documento, Imagen)
-como la capa vectorial (pgvector con Embedding_Texto e Embedding_Imagen).
+Proporciona la capa de acceso a datos para documentos científicos, imágenes
+astronómicas y sus embeddings vectoriales.
+
+CAMBIO v2:
+- guardar_embedding_texto ahora acepta y persiste contenido_chunk (texto
+  real del fragmento) junto al vector.
+- buscar_chunks_similares ya no hace JOIN con Documento para traer
+  contenido_texto completo. Lee contenido_chunk directamente desde
+  Embedding_Texto, que es el fragmento específico y pesa órdenes de
+  magnitud menos que el documento completo.
 """
 
 from typing import List, Optional
@@ -15,55 +22,36 @@ from models.imagen_model import Imagen
 class RepositorioDocumentos:
     """
     Repositorio para gestionar documentos, imágenes y sus embeddings.
-    
-    Encapsula operaciones CRUD sobre Documento e Imagen, así como la persistencia
-    y búsqueda de embeddings vectoriales en pgvector. Diseñado con OCP para
-    permitir extensión sin modificación.
-    
-    Gestiona dos tipos de datos:
-    1. Documentos: textos científicos indexados por chunks, cada uno con embedding
-    2. Imágenes: archivos visuales astronómicos con embeddings CLIP
-    
-    Las búsquedas vectoriales utilizan el operador <=> de pgvector (distancia coseno)
-    para encontrar embeddings más similares a una consulta.
+
+    Encapsula operaciones CRUD sobre Documento e Imagen, así como la
+    persistencia y búsqueda de embeddings vectoriales en pgvector.
+
+    Las búsquedas vectoriales utilizan el operador <=> de pgvector
+    (distancia coseno) para encontrar embeddings más similares a una consulta.
     """
 
+    # ------------------------------------------------------------------
     # OPERACIONES CRUD DE DOCUMENTO
+    # ------------------------------------------------------------------
 
     async def crear_documento(self, datos: Documento) -> Documento:
         """
         Crea un nuevo documento científico en la base de datos.
-        
-        Inserta en tabla Documento todos los metadatos: título, idioma, fecha,
-        fuente y contenido textual completo.
-        
-        SQL utilizado:
+
+        SQL:
             INSERT INTO Documento (titulo, idioma, fecha, fuente, contenido_texto, id_objeto)
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id_doc
-        
+
         Args:
-            datos: Objeto Documento con los datos a insertar
-        
+            datos: Objeto Documento con los datos a insertar.
+
         Returns:
-            Documento creado con id_doc asignado por la BD
-        
+            Documento creado con id_doc asignado por la BD.
+
         Raises:
-            ValueError: Si el título está vacío
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> doc = Documento(
-            ...     id_doc=999,  # Ignorado
-            ...     titulo="Observaciones de la Vía Láctea",
-            ...     idioma="es",
-            ...     fecha=datetime.now(),
-            ...     fuente="NASA",
-            ...     contenido_texto="...",
-            ...     id_objeto=1
-            ... )
-            >>> nuevo = await repo.crear_documento(doc)
+            ValueError: Si el título está vacío.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not datos.titulo or not datos.titulo.strip():
             raise ValueError("El título del documento no puede estar vacío")
@@ -83,7 +71,6 @@ class RepositorioDocumentos:
                     datos.contenido_texto,
                     datos.id_objeto
                 )
-
                 datos.id_doc = id_doc
                 return datos
 
@@ -95,26 +82,20 @@ class RepositorioDocumentos:
     async def obtener_documento_por_id(self, id_doc: int) -> Optional[Documento]:
         """
         Recupera un documento por su identificador único.
-        
-        SQL utilizado:
+
+        SQL:
             SELECT id_doc, titulo, idioma, fecha, fuente, contenido_texto, id_objeto
-            FROM Documento
-            WHERE id_doc = $1
-        
+            FROM Documento WHERE id_doc = $1
+
         Args:
-            id_doc: ID del documento a buscar
-        
+            id_doc: ID del documento a buscar.
+
         Returns:
-            Documento si existe, None en caso contrario
-        
+            Documento si existe, None en caso contrario.
+
         Raises:
-            ValueError: Si id_doc no es positivo
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> doc = await repo.obtener_documento_por_id(1)
-            >>> doc.titulo if doc else "No encontrado"
+            ValueError: Si id_doc no es positivo.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not isinstance(id_doc, int) or id_doc <= 0:
             raise ValueError("id_doc debe ser un entero positivo")
@@ -129,7 +110,6 @@ class RepositorioDocumentos:
                     """,
                     id_doc
                 )
-
                 if not fila:
                     return None
 
@@ -148,34 +128,22 @@ class RepositorioDocumentos:
                 f"Error al obtener documento con id {id_doc}: {e}"
             ) from e
 
-    async def listar_documentos_por_objeto(
-        self,
-        id_objeto: int
-    ) -> List[Documento]:
+    async def listar_documentos_por_objeto(self, id_objeto: int) -> List[Documento]:
         """
-        Lista todos los documentos asociados a un objeto astronómico específico.
-        
-        SQL utilizado:
-            SELECT id_doc, titulo, idioma, fecha, fuente, contenido_texto, id_objeto
-            FROM Documento
-            WHERE id_objeto = $1
-            ORDER BY fecha DESC
-        
+        Lista todos los documentos asociados a un objeto astronómico.
+
+        SQL:
+            SELECT ... FROM Documento WHERE id_objeto = $1 ORDER BY fecha DESC
+
         Args:
-            id_objeto: ID del objeto astronómico
-        
+            id_objeto: ID del objeto astronómico.
+
         Returns:
-            Lista de Documento ordenados por fecha descendente
-        
+            Lista de Documento ordenados por fecha descendente.
+
         Raises:
-            ValueError: Si id_objeto no es positivo
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> docs = await repo.listar_documentos_por_objeto(1)
-            >>> len(docs)
-            3
+            ValueError: Si id_objeto no es positivo.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not isinstance(id_objeto, int) or id_objeto <= 0:
             raise ValueError("id_objeto debe ser un entero positivo")
@@ -191,59 +159,46 @@ class RepositorioDocumentos:
                     """,
                     id_objeto
                 )
-
-                documentos = []
-                for fila in filas:
-                    documentos.append(
-                        Documento(
-                            id_doc=fila['id_doc'],
-                            titulo=fila['titulo'],
-                            idioma=fila['idioma'],
-                            fecha=fila['fecha'],
-                            fuente=fila['fuente'],
-                            contenido_texto=fila['contenido_texto'],
-                            id_objeto=fila['id_objeto']
-                        )
+                return [
+                    Documento(
+                        id_doc=fila['id_doc'],
+                        titulo=fila['titulo'],
+                        idioma=fila['idioma'],
+                        fecha=fila['fecha'],
+                        fuente=fila['fuente'],
+                        contenido_texto=fila['contenido_texto'],
+                        id_objeto=fila['id_objeto']
                     )
-
-                return documentos
+                    for fila in filas
+                ]
 
         except Exception as e:
             raise RuntimeError(
                 f"Error al listar documentos del objeto {id_objeto}: {e}"
             ) from e
 
+    # ------------------------------------------------------------------
     # OPERACIONES CRUD DE IMAGEN
+    # ------------------------------------------------------------------
 
     async def crear_imagen(self, datos: Imagen) -> Imagen:
         """
         Crea un nuevo registro de imagen astronómica.
-        
-        SQL utilizado:
+
+        SQL:
             INSERT INTO Imagen (ruta_archivo, descripcion, etiquetas, id_doc)
             VALUES ($1, $2, $3, $4)
             RETURNING id_imagen
-        
+
         Args:
-            datos: Objeto Imagen con los datos a insertar
-        
+            datos: Objeto Imagen con los datos a insertar.
+
         Returns:
-            Imagen creada con id_imagen asignado
-        
+            Imagen creada con id_imagen asignado.
+
         Raises:
-            ValueError: Si la ruta está vacía
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> imagen = Imagen(
-            ...     id_imagen=999,  # Ignorado
-            ...     ruta_archivo="/datos/galaxias/m31.jpg",
-            ...     descripcion="Galaxia de Andromeda",
-            ...     etiquetas=["galaxia", "espiral"],
-            ...     id_doc=1
-            ... )
-            >>> nueva = await repo.crear_imagen(imagen)
+            ValueError: Si la ruta está vacía.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not datos.ruta_archivo or not datos.ruta_archivo.strip():
             raise ValueError("La ruta del archivo no puede estar vacía")
@@ -261,21 +216,24 @@ class RepositorioDocumentos:
                     self._serializar_etiquetas(datos.etiquetas),
                     datos.id_doc
                 )
-
                 datos.id_imagen = id_imagen
                 return datos
 
         except Exception as e:
-            raise RuntimeError(
-                f"Error al crear imagen: {e}"
-            ) from e
+            raise RuntimeError(f"Error al crear imagen: {e}") from e
 
+    # ------------------------------------------------------------------
     # OPERACIONES DE EMBEDDINGS DE TEXTO (pgvector)
+    # ------------------------------------------------------------------
 
     def _serializar_etiquetas(self, etiquetas: Optional[List[str]]) -> Optional[str]:
         if etiquetas is None:
             return None
-        return ",".join(str(tag).strip() for tag in etiquetas if tag is not None and str(tag).strip())
+        return ",".join(
+            str(tag).strip()
+            for tag in etiquetas
+            if tag is not None and str(tag).strip()
+        )
 
     async def guardar_embedding_texto(
         self,
@@ -283,46 +241,37 @@ class RepositorioDocumentos:
         chunk_id: int,
         vector: List[float],
         modelo: str,
-        estrategia_chunking: str
+        estrategia_chunking: str,
+        contenido_chunk: Optional[str] = None
     ) -> int:
         """
         Persiste el embedding vectorial de un chunk de texto en pgvector.
-        
-        Cada documento se divide en chunks antes de generar embeddings.
-        Cada chunk tiene su propio vector almacenado en Embedding_Texto
-        para permitir búsqueda semántica a nivel de fragmento.
-        
-        SQL utilizado:
+
+        CAMBIO v2: acepta contenido_chunk opcional. Cuando se provee, se
+        guarda junto al vector para que buscar_chunks_similares pueda
+        devolver el texto del fragmento sin hacer JOIN con Documento.
+
+        SQL:
             INSERT INTO Embedding_Texto
-                (id_doc, chunk_id, vector, modelo, estrategia_chunking)
-            VALUES ($1, $2, $3::vector, $4, $5)
+                (id_doc, chunk_id, vector, modelo, estrategia_chunking, contenido_chunk)
+            VALUES ($1, $2, $3::vector, $4, $5, $6)
             RETURNING id_embedding
-        
+
         Args:
-            id_doc: ID del documento al que pertenece el chunk
-            chunk_id: Número de chunk dentro del documento (empieza en 0)
-            vector: Embedding numérico generado por el modelo (ej: 384 dims)
-            modelo: Nombre del modelo usado (ej: 'sentence-transformers/all-MiniLM-L6-v2')
-            estrategia_chunking: Estrategia usada para dividir el texto
-                                 (ej: 'fixed', 'sentence', 'paragraph')
-        
+            id_doc: ID del documento al que pertenece el chunk.
+            chunk_id: Número de chunk dentro del documento (empieza en 0).
+            vector: Embedding numérico generado por el modelo.
+            modelo: Nombre del modelo usado.
+            estrategia_chunking: Estrategia usada para dividir el texto.
+            contenido_chunk: Texto real del fragmento (opcional pero recomendado).
+
         Returns:
-            id_embedding asignado por la base de datos
-        
+            id_embedding asignado por la base de datos.
+
         Raises:
             ValueError: Si el vector está vacío, id_doc no es positivo,
-                        o chunk_id es negativo
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> id_emb = await repo.guardar_embedding_texto(
-            ...     id_doc=1,
-            ...     chunk_id=0,
-            ...     vector=[0.12, -0.45, 0.88, ...],  # 384 valores
-            ...     modelo="sentence-transformers/all-MiniLM-L6-v2",
-            ...     estrategia_chunking="sentence"
-            ... )
+                        o chunk_id es negativo.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not isinstance(id_doc, int) or id_doc <= 0:
             raise ValueError("id_doc debe ser un entero positivo")
@@ -331,7 +280,6 @@ class RepositorioDocumentos:
         if not vector:
             raise ValueError("El vector no puede estar vacío")
 
-        # pgvector espera el vector como string '[x1, x2, ...]'
         vector_str = "[" + ",".join(str(v) for v in vector) + "]"
 
         try:
@@ -339,17 +287,17 @@ class RepositorioDocumentos:
                 id_embedding = await conexion.fetchval(
                     """
                     INSERT INTO Embedding_Texto
-                        (id_doc, chunk_id, vector, modelo, estrategia_chunking)
-                    VALUES ($1, $2, $3::vector, $4, $5)
+                        (id_doc, chunk_id, vector, modelo, estrategia_chunking, contenido_chunk)
+                    VALUES ($1, $2, $3::vector, $4, $5, $6)
                     RETURNING id_embedding
                     """,
                     id_doc,
                     chunk_id,
                     vector_str,
                     modelo,
-                    estrategia_chunking
+                    estrategia_chunking,
+                    contenido_chunk
                 )
-
                 return id_embedding
 
         except Exception as e:
@@ -365,62 +313,48 @@ class RepositorioDocumentos:
         estrategia_chunking: Optional[str] = None
     ) -> List[dict]:
         """
-        Busca los chunks de texto más similares semánticamente a una consulta.
-        
-        Utiliza el operador <=> de pgvector (distancia coseno) sobre la tabla
-        Embedding_Texto y hace JOIN con Documento para recuperar título y
-        contenido. La similitud se normaliza como 1 - distancia_coseno,
-        donde 1.0 = idéntico y 0.0 = sin relación.
-        
-        Si se especifica estrategia_chunking se filtra por esa estrategia,
-        útil cuando el sistema usa múltiples estrategias en paralelo y se
-        quiere comparar resultados o forzar una específica.
-        
-        SQL utilizado (sin filtro de estrategia):
+        Busca los chunks más similares semánticamente a una consulta.
+
+        CAMBIO v2: lee contenido_chunk desde Embedding_Texto en lugar de
+        hacer JOIN con Documento para traer contenido_texto completo.
+        Esto reduce el payload transferido desde PostgreSQL de potencialmente
+        cientos de KB (documento completo × N chunks) a solo los fragmentos
+        relevantes (típicamente < 1 KB cada uno).
+
+        El JOIN con Documento se mantiene únicamente para obtener el título,
+        que es un campo corto (VARCHAR) necesario para que Claude identifique
+        la fuente.
+
+        SQL (sin filtro):
             SELECT
                 et.id_doc,
                 d.titulo,
                 et.chunk_id,
-                et.estrategia_chunking   AS estrategia,
+                et.estrategia_chunking      AS estrategia,
                 1 - (et.vector <=> $1::vector) AS similitud,
-                d.contenido_texto        AS contenido
+                et.contenido_chunk          AS contenido
             FROM Embedding_Texto et
             JOIN Documento d ON d.id_doc = et.id_doc
             ORDER BY et.vector <=> $1::vector
             LIMIT $2
-        
-        SQL utilizado (con filtro de estrategia):
-            ... WHERE et.estrategia_chunking = $3
-            ORDER BY et.vector <=> $1::vector
-            LIMIT $2
-        
+
         Args:
-            vector_consulta: Embedding de la consulta del usuario
-            top_k: Número máximo de chunks a retornar
-            estrategia_chunking: Filtro opcional por estrategia de chunking
-        
+            vector_consulta: Embedding de la consulta del usuario.
+            top_k: Número máximo de chunks a retornar.
+            estrategia_chunking: Filtro opcional por estrategia de chunking.
+
         Returns:
             Lista de dicts con las claves:
-                - id_doc (int): ID del documento fuente
-                - titulo (str): Título del documento
-                - chunk_id (int): Índice del chunk dentro del documento
-                - estrategia (str): Estrategia de chunking usada
-                - similitud (float): Similitud coseno normalizada [0.0, 1.0]
-                - contenido (str | None): Texto completo del documento
-        
+                - id_doc (int)
+                - titulo (str)
+                - chunk_id (int)
+                - estrategia (str)
+                - similitud (float) [0.0, 1.0]
+                - contenido (str | None): texto del chunk, no del documento completo
+
         Raises:
-            ValueError: Si vector_consulta está vacío o top_k no es positivo
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> resultados = await repo.buscar_chunks_similares(
-            ...     vector_consulta=[0.12, -0.45, 0.88, ...],
-            ...     top_k=5,
-            ...     estrategia_chunking="sentence"
-            ... )
-            >>> for r in resultados:
-            ...     print(r['titulo'], r['similitud'])
+            ValueError: Si vector_consulta está vacío o top_k no es positivo.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not vector_consulta:
             raise ValueError("El vector de consulta no puede estar vacío")
@@ -440,7 +374,7 @@ class RepositorioDocumentos:
                             et.chunk_id,
                             et.estrategia_chunking              AS estrategia,
                             1 - (et.vector <=> $1::vector)      AS similitud,
-                            d.contenido_texto                   AS contenido
+                            et.contenido_chunk                  AS contenido
                         FROM Embedding_Texto et
                         JOIN Documento d ON d.id_doc = et.id_doc
                         WHERE et.estrategia_chunking = $3
@@ -460,7 +394,7 @@ class RepositorioDocumentos:
                             et.chunk_id,
                             et.estrategia_chunking              AS estrategia,
                             1 - (et.vector <=> $1::vector)      AS similitud,
-                            d.contenido_texto                   AS contenido
+                            et.contenido_chunk                  AS contenido
                         FROM Embedding_Texto et
                         JOIN Documento d ON d.id_doc = et.id_doc
                         ORDER BY et.vector <=> $1::vector
@@ -472,22 +406,22 @@ class RepositorioDocumentos:
 
                 return [
                     {
-                        "id_doc":    fila["id_doc"],
-                        "titulo":    fila["titulo"],
-                        "chunk_id":  fila["chunk_id"],
+                        "id_doc":     fila["id_doc"],
+                        "titulo":     fila["titulo"],
+                        "chunk_id":   fila["chunk_id"],
                         "estrategia": fila["estrategia"],
-                        "similitud": float(fila["similitud"]),
-                        "contenido": fila["contenido"],
+                        "similitud":  float(fila["similitud"]),
+                        "contenido":  fila["contenido"],
                     }
                     for fila in filas
                 ]
 
         except Exception as e:
-            raise RuntimeError(
-                f"Error al buscar chunks similares: {e}"
-            ) from e
+            raise RuntimeError(f"Error al buscar chunks similares: {e}") from e
 
+    # ------------------------------------------------------------------
     # OPERACIONES DE EMBEDDINGS DE IMAGEN (pgvector)
+    # ------------------------------------------------------------------
 
     async def guardar_embedding_imagen(
         self,
@@ -497,35 +431,23 @@ class RepositorioDocumentos:
     ) -> int:
         """
         Persiste el embedding vectorial CLIP de una imagen en pgvector.
-        
-        Los embeddings de imagen permiten búsqueda semántica visual: dada una
-        consulta de texto, su embedding puede compararse contra embeddings CLIP
-        de imágenes para recuperar las más relevantes visualmente.
-        
-        SQL utilizado:
+
+        SQL:
             INSERT INTO Embedding_Imagen (id_imagen, vector, modelo)
             VALUES ($1, $2::vector, $3)
             RETURNING id_embedding
-        
+
         Args:
-            id_imagen: ID de la imagen a la que pertenece el embedding
-            vector: Embedding CLIP de la imagen (típicamente 512 dims con CLIP ViT-B/32)
-            modelo: Nombre del modelo CLIP usado (ej: 'openai/clip-vit-base-patch32')
-        
+            id_imagen: ID de la imagen a la que pertenece el embedding.
+            vector: Embedding CLIP de la imagen (512 dims con CLIP ViT-B/32).
+            modelo: Nombre del modelo CLIP usado.
+
         Returns:
-            id_embedding asignado por la base de datos
-        
+            id_embedding asignado por la base de datos.
+
         Raises:
-            ValueError: Si el vector está vacío o id_imagen no es positivo
-            RuntimeError: Si hay error en la operación de BD
-        
-        Example:
-            >>> repo = RepositorioDocumentos()
-            >>> id_emb = await repo.guardar_embedding_imagen(
-            ...     id_imagen=7,
-            ...     vector=[0.03, 0.91, -0.22, ...],  # 512 valores CLIP
-            ...     modelo="openai/clip-vit-base-patch32"
-            ... )
+            ValueError: Si el vector está vacío o id_imagen no es positivo.
+            RuntimeError: Si hay error en la operación de BD.
         """
         if not isinstance(id_imagen, int) or id_imagen <= 0:
             raise ValueError("id_imagen debe ser un entero positivo")
@@ -546,7 +468,6 @@ class RepositorioDocumentos:
                     vector_str,
                     modelo
                 )
-
                 return id_embedding
 
         except Exception as e:
