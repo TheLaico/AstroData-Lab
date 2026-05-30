@@ -53,28 +53,150 @@ class GestionObjetos:
         self.repo_observaciones = RepositorioObservaciones()
 
     def obtener_definiciones_tools(self) -> List[Tool]:
-        names = [
-            "crear_objeto_astronomico",
-            "obtener_objeto_astronomico",
-            "actualizar_objeto_astronomico",
-            "eliminar_objeto_astronomico",
-            "listar_planetas_habitables",
-            "crear_documento_con_embeddings",
-            "crear_imagen_con_embedding",
-            "crear_telescopio",
-            "obtener_telescopio",
-            "listar_telescopios",
-            "crear_observacion",
-            "listar_observaciones_por_objeto",
-            "listar_observaciones_por_telescopio",
-        ]
         return [
             Tool(
-                name=name,
-                description=f"Herramienta AstroData Lab: {name}.",
+                name="crear_objeto_astronomico",
+                description="Crea un objeto astronomico basico.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "nombre": {"type": "string"},
+                        "tipo": {"type": "string", "enum": sorted(self.TIPOS_VALIDOS)},
+                        "descripcion_cientifica": {"type": ["string", "null"]},
+                        "atributos": {"type": "object"},
+                    },
+                    "required": ["nombre", "tipo"],
+                },
+            ),
+            Tool(
+                name="obtener_objeto_astronomico",
+                description="Obtiene un objeto astronomico por id o nombre.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_objeto": {"type": ["integer", "string", "null"]},
+                        "nombre": {"type": ["string", "null"]},
+                    },
+                },
+            ),
+            Tool(
+                name="actualizar_objeto_astronomico",
+                description="Actualiza campos basicos de un objeto astronomico.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_objeto": {"type": ["integer", "string"]},
+                        "campos": {"type": "object"},
+                    },
+                    "required": ["id_objeto", "campos"],
+                },
+            ),
+            Tool(
+                name="eliminar_objeto_astronomico",
+                description="Elimina un objeto astronomico por id.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"id_objeto": {"type": ["integer", "string"]}},
+                    "required": ["id_objeto"],
+                },
+            ),
+            Tool(
+                name="listar_planetas_habitables",
+                description="Lista planetas con puntaje de habitabilidad minimo.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"puntaje_minimo": {"type": ["number", "string"], "default": 0.7}},
+                },
+            ),
+            Tool(
+                name="crear_documento_con_embeddings",
+                description="Crea un documento y genera un embedding textual.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "titulo": {"type": "string"},
+                        "contenido_texto": {"type": "string"},
+                        "id_objeto": {"type": ["integer", "string", "null"]},
+                        "idioma": {"type": "string", "default": "es"},
+                        "fuente": {"type": ["string", "null"]},
+                        "estrategia_chunking": {"type": "string", "default": "sentence"},
+                    },
+                    "required": ["titulo", "contenido_texto"],
+                },
+            ),
+            Tool(
+                name="crear_imagen_con_embedding",
+                description="Registra una imagen astronomica.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "ruta_archivo": {"type": "string"},
+                        "descripcion": {"type": ["string", "null"]},
+                        "etiquetas": {"type": ["array", "null"], "items": {"type": "string"}},
+                        "id_doc": {"type": ["integer", "string", "null"]},
+                    },
+                    "required": ["ruta_archivo"],
+                },
+            ),
+            Tool(
+                name="crear_telescopio",
+                description="Crea un telescopio.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "nombre": {"type": "string"},
+                        "tipo": {"type": ["string", "null"]},
+                        "ubicacion": {"type": ["string", "null"]},
+                    },
+                    "required": ["nombre"],
+                },
+            ),
+            Tool(
+                name="obtener_telescopio",
+                description="Obtiene un telescopio por id.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"id_telescopio": {"type": ["integer", "string"]}},
+                    "required": ["id_telescopio"],
+                },
+            ),
+            Tool(
+                name="listar_telescopios",
+                description="Lista telescopios registrados.",
                 inputSchema={"type": "object", "properties": {}},
-            )
-            for name in names
+            ),
+            Tool(
+                name="crear_observacion",
+                description="Crea una observacion astronomica.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_telescopio": {"type": ["integer", "string"]},
+                        "id_objeto": {"type": ["integer", "string"]},
+                        "descripcion": {"type": ["string", "null"]},
+                        "fecha": {"type": ["string", "null"]},
+                    },
+                    "required": ["id_telescopio", "id_objeto"],
+                },
+            ),
+            Tool(
+                name="listar_observaciones_por_objeto",
+                description="Lista observaciones asociadas a un objeto astronomico.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"id_objeto": {"type": ["integer", "string"]}},
+                    "required": ["id_objeto"],
+                },
+            ),
+            Tool(
+                name="listar_observaciones_por_telescopio",
+                description="Lista observaciones realizadas por un telescopio.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {"id_telescopio": {"type": ["integer", "string"]}},
+                    "required": ["id_telescopio"],
+                },
+            ),
         ]
 
     async def crear_objeto_astronomico(
@@ -131,6 +253,7 @@ class GestionObjetos:
     ) -> Dict[str, Any]:
         try:
             if id_objeto is not None:
+                id_objeto = self._to_int(id_objeto, "id_objeto")
                 objeto = await self.repo_objetos.obtener_objeto_por_id(id_objeto)
             elif nombre:
                 objeto = await self.repo_objetos.obtener_objeto_por_nombre(nombre)
@@ -147,6 +270,7 @@ class GestionObjetos:
         id_objeto: int,
         campos: Dict[str, Any],
     ) -> Dict[str, Any]:
+        id_objeto = self._to_int(id_objeto, "id_objeto")
         if not isinstance(id_objeto, int) or id_objeto <= 0:
             return {"error": "id_objeto debe ser un entero positivo."}
         if not campos:
@@ -188,6 +312,7 @@ class GestionObjetos:
             return {"error": f"Error al actualizar objeto astronomico: {exc}"}
 
     async def eliminar_objeto_astronomico(self, id_objeto: int) -> Dict[str, Any]:
+        id_objeto = self._to_int(id_objeto, "id_objeto")
         if not isinstance(id_objeto, int) or id_objeto <= 0:
             return {"error": "id_objeto debe ser un entero positivo."}
         try:
@@ -205,6 +330,7 @@ class GestionObjetos:
 
     async def listar_planetas_habitables(self, puntaje_minimo: float = 0.7) -> Dict[str, Any]:
         try:
+            puntaje_minimo = float(puntaje_minimo)
             planetas = await self.repo_objetos.listar_planetas_por_habitabilidad(puntaje_minimo)
             return {"puntaje_minimo": puntaje_minimo, "planetas": [_dump(p) for p in planetas]}
         except Exception as exc:
@@ -220,6 +346,7 @@ class GestionObjetos:
         estrategia_chunking: str = "sentence",
     ) -> Dict[str, Any]:
         try:
+            id_objeto = self._to_optional_int(id_objeto, "id_objeto")
             documento = await self.repo_documentos.crear_documento(
                 Documento(
                     id_doc=-1,
@@ -253,6 +380,7 @@ class GestionObjetos:
         id_doc: Optional[int] = None,
     ) -> Dict[str, Any]:
         try:
+            id_doc = self._to_optional_int(id_doc, "id_doc")
             imagen = await self.repo_documentos.crear_imagen(
                 Imagen(
                     id_imagen=-1,
@@ -269,7 +397,9 @@ class GestionObjetos:
     async def crear_telescopio(self, nombre: str, tipo: Optional[str] = None, ubicacion: Optional[str] = None) -> Dict[str, Any]:
         try:
             telescopio = await self.repo_observaciones.crear_telescopio(
-                Telescopio(id_telescopio=-1, nombre=nombre, tipo=tipo, ubicacion=ubicacion)
+                nombre=nombre,
+                tipo=tipo,
+                ubicacion=ubicacion,
             )
             return {"telescopio": _dump(telescopio)}
         except Exception as exc:
@@ -277,7 +407,8 @@ class GestionObjetos:
 
     async def obtener_telescopio(self, id_telescopio: int) -> Dict[str, Any]:
         try:
-            telescopio = await self.repo_observaciones.obtener_telescopio(id_telescopio)
+            id_telescopio = self._to_int(id_telescopio, "id_telescopio")
+            telescopio = await self.repo_observaciones.obtener_telescopio_por_id(id_telescopio)
             return {"telescopio": _dump(telescopio)} if telescopio else {"error": "Telescopio no encontrado."}
         except Exception as exc:
             return {"error": f"Error al obtener telescopio: {exc}"}
@@ -297,15 +428,14 @@ class GestionObjetos:
         fecha: Optional[str | date] = None,
     ) -> Dict[str, Any]:
         try:
+            id_telescopio = self._to_int(id_telescopio, "id_telescopio")
+            id_objeto = self._to_int(id_objeto, "id_objeto")
             fecha_obs = date.fromisoformat(fecha) if isinstance(fecha, str) else (fecha or date.today())
             observacion = await self.repo_observaciones.crear_observacion(
-                Observacion(
-                    id_observacion=-1,
-                    id_telescopio=id_telescopio,
-                    id_objeto=id_objeto,
-                    fecha=fecha_obs,
-                    descripcion=descripcion,
-                )
+                id_telescopio=id_telescopio,
+                id_objeto=id_objeto,
+                fecha=fecha_obs,
+                descripcion=descripcion,
             )
             return {"observacion": _dump(observacion)}
         except Exception as exc:
@@ -313,6 +443,7 @@ class GestionObjetos:
 
     async def listar_observaciones_por_objeto(self, id_objeto: int) -> Dict[str, Any]:
         try:
+            id_objeto = self._to_int(id_objeto, "id_objeto")
             obs = await self.repo_observaciones.listar_observaciones_por_objeto(id_objeto)
             return {"observaciones": [_dump(o) for o in obs]}
         except Exception as exc:
@@ -320,7 +451,19 @@ class GestionObjetos:
 
     async def listar_observaciones_por_telescopio(self, id_telescopio: int) -> Dict[str, Any]:
         try:
+            id_telescopio = self._to_int(id_telescopio, "id_telescopio")
             obs = await self.repo_observaciones.listar_observaciones_por_telescopio(id_telescopio)
             return {"observaciones": [_dump(o) for o in obs]}
         except Exception as exc:
             return {"error": f"Error al listar observaciones por telescopio: {exc}"}
+
+    def _to_int(self, value: Any, field_name: str) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} debe ser un entero positivo.") from exc
+
+    def _to_optional_int(self, value: Any, field_name: str) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        return self._to_int(value, field_name)

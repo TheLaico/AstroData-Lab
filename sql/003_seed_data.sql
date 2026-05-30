@@ -1,70 +1,134 @@
 -- AstroData Lab - Datos minimos de demostracion.
+-- Compatible con bases existentes aunque no tengan UNIQUE en columnas naturales.
 
-INSERT INTO Usuario (id_usuario, nombre, correo)
-VALUES (1, 'Usuario Demo', 'demo@astrodata.local')
-ON CONFLICT (correo) DO NOTHING;
+INSERT INTO Usuario (nombre, correo)
+SELECT 'Usuario Demo', 'demo@astrodata.local'
+WHERE NOT EXISTS (
+    SELECT 1 FROM Usuario WHERE correo = 'demo@astrodata.local'
+);
 
-INSERT INTO Tipo_Galaxia (id_tipo_galaxia, nombre_tipo)
-VALUES (1, 'Espiral'), (2, 'Eliptica')
-ON CONFLICT (nombre_tipo) DO NOTHING;
+INSERT INTO Tipo_Galaxia (nombre_tipo)
+SELECT 'Espiral'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Galaxia WHERE nombre_tipo = 'Espiral');
 
-INSERT INTO Tipo_Estrella (id_tipo_estrella, nombre_tipo)
-VALUES (1, 'G2V'), (2, 'M')
-ON CONFLICT (nombre_tipo) DO NOTHING;
+INSERT INTO Tipo_Galaxia (nombre_tipo)
+SELECT 'Eliptica'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Galaxia WHERE nombre_tipo = 'Eliptica');
 
-INSERT INTO Tipo_Planeta (id_tipo_planeta, nombre_tipo)
-VALUES (1, 'Rocoso'), (2, 'Gaseoso'), (3, 'Supertierra')
-ON CONFLICT (nombre_tipo) DO NOTHING;
+INSERT INTO Tipo_Estrella (nombre_tipo)
+SELECT 'G2V'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Estrella WHERE nombre_tipo = 'G2V');
 
-INSERT INTO Objeto_Astronomico (id_objeto, nombre, descripcion_cientifica)
-VALUES
-    (1, 'Via Lactea', 'Galaxia espiral barrada que contiene el Sistema Solar.'),
-    (2, 'Sistema Solar', 'Sistema estelar ubicado en el brazo de Orion de la Via Lactea.'),
-    (3, 'Sol', 'Estrella tipo G2V con temperatura superficial aproximada de 5778 K.'),
-    (4, 'Tierra', 'Planeta rocoso con agua liquida, atmosfera rica en nitrogeno y oxigeno, y condiciones habitables.'),
-    (5, 'Luna', 'Satelite natural de la Tierra con superficie rocosa y radio aproximado de 1737 km.')
-ON CONFLICT (id_objeto) DO NOTHING;
+INSERT INTO Tipo_Estrella (nombre_tipo)
+SELECT 'M'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Estrella WHERE nombre_tipo = 'M');
+
+INSERT INTO Tipo_Planeta (nombre_tipo)
+SELECT 'Rocoso'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Planeta WHERE nombre_tipo = 'Rocoso');
+
+INSERT INTO Tipo_Planeta (nombre_tipo)
+SELECT 'Gaseoso'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Planeta WHERE nombre_tipo = 'Gaseoso');
+
+INSERT INTO Tipo_Planeta (nombre_tipo)
+SELECT 'Supertierra'
+WHERE NOT EXISTS (SELECT 1 FROM Tipo_Planeta WHERE nombre_tipo = 'Supertierra');
+
+INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+SELECT 'Via Lactea', 'Galaxia espiral barrada que contiene el Sistema Solar.'
+WHERE NOT EXISTS (SELECT 1 FROM Objeto_Astronomico WHERE nombre = 'Via Lactea');
+
+INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+SELECT 'Sistema Solar', 'Sistema estelar ubicado en el brazo de Orion de la Via Lactea.'
+WHERE NOT EXISTS (SELECT 1 FROM Objeto_Astronomico WHERE nombre = 'Sistema Solar');
+
+INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+SELECT 'Sol', 'Estrella tipo G2V con temperatura superficial aproximada de 5778 K.'
+WHERE NOT EXISTS (SELECT 1 FROM Objeto_Astronomico WHERE nombre = 'Sol');
+
+INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+SELECT 'Tierra', 'Planeta rocoso con agua liquida, atmosfera rica en nitrogeno y oxigeno, y condiciones habitables.'
+WHERE NOT EXISTS (SELECT 1 FROM Objeto_Astronomico WHERE nombre = 'Tierra');
+
+INSERT INTO Objeto_Astronomico (nombre, descripcion_cientifica)
+SELECT 'Luna', 'Satelite natural de la Tierra con superficie rocosa y radio aproximado de 1737 km.'
+WHERE NOT EXISTS (SELECT 1 FROM Objeto_Astronomico WHERE nombre = 'Luna');
 
 INSERT INTO Galaxia (id_objeto, id_tipo_galaxia, distancia)
-VALUES (1, 1, 0)
-ON CONFLICT (id_objeto) DO NOTHING;
+SELECT o.id_objeto, tg.id_tipo_galaxia, 0
+FROM Objeto_Astronomico o
+JOIN Tipo_Galaxia tg ON tg.nombre_tipo = 'Espiral'
+WHERE o.nombre = 'Via Lactea'
+AND NOT EXISTS (SELECT 1 FROM Galaxia g WHERE g.id_objeto = o.id_objeto);
 
 INSERT INTO Sistema_Estelar (id_objeto, id_galaxia)
-VALUES (2, 1)
-ON CONFLICT (id_objeto) DO NOTHING;
+SELECT sistema.id_objeto, galaxia.id_objeto
+FROM Objeto_Astronomico sistema
+JOIN Objeto_Astronomico galaxia ON galaxia.nombre = 'Via Lactea'
+WHERE sistema.nombre = 'Sistema Solar'
+AND NOT EXISTS (
+    SELECT 1 FROM Sistema_Estelar se WHERE se.id_objeto = sistema.id_objeto
+);
 
 INSERT INTO Estrella (id_objeto, id_tipo_estrella, id_sistema, masa, temperatura)
-VALUES (3, 1, 2, 1.0, 5778)
-ON CONFLICT (id_objeto) DO NOTHING;
+SELECT sol.id_objeto, te.id_tipo_estrella, sistema.id_objeto, 1.0, 5778
+FROM Objeto_Astronomico sol
+JOIN Tipo_Estrella te ON te.nombre_tipo = 'G2V'
+JOIN Objeto_Astronomico sistema ON sistema.nombre = 'Sistema Solar'
+WHERE sol.nombre = 'Sol'
+AND NOT EXISTS (SELECT 1 FROM Estrella e WHERE e.id_objeto = sol.id_objeto);
 
 INSERT INTO Planeta (id_objeto, id_tipo_planeta, id_sistema, masa, temperatura)
-VALUES (4, 1, 2, 1.0, 288)
-ON CONFLICT (id_objeto) DO NOTHING;
+SELECT tierra.id_objeto, tp.id_tipo_planeta, sistema.id_objeto, 1.0, 288
+FROM Objeto_Astronomico tierra
+JOIN Tipo_Planeta tp ON tp.nombre_tipo = 'Rocoso'
+JOIN Objeto_Astronomico sistema ON sistema.nombre = 'Sistema Solar'
+WHERE tierra.nombre = 'Tierra'
+AND NOT EXISTS (SELECT 1 FROM Planeta p WHERE p.id_objeto = tierra.id_objeto);
 
 INSERT INTO Luna (id_objeto, id_planeta, radio)
-VALUES (5, 4, 1737.4)
-ON CONFLICT (id_objeto) DO NOTHING;
+SELECT luna.id_objeto, tierra.id_objeto, 1737.4
+FROM Objeto_Astronomico luna
+JOIN Objeto_Astronomico tierra ON tierra.nombre = 'Tierra'
+WHERE luna.nombre = 'Luna'
+AND NOT EXISTS (SELECT 1 FROM Luna l WHERE l.id_objeto = luna.id_objeto);
 
 INSERT INTO Evaluacion_Habitabilidad (id_planeta, puntaje, descripcion)
-VALUES (4, 0.98, 'Planeta con alta evidencia de habitabilidad.')
-ON CONFLICT DO NOTHING;
+SELECT tierra.id_objeto, 0.98, 'Planeta con alta evidencia de habitabilidad.'
+FROM Objeto_Astronomico tierra
+WHERE tierra.nombre = 'Tierra'
+AND NOT EXISTS (
+    SELECT 1 FROM Evaluacion_Habitabilidad eh WHERE eh.id_planeta = tierra.id_objeto
+);
 
-INSERT INTO Documento (id_doc, titulo, idioma, fecha, fuente, contenido_texto, id_objeto)
-VALUES (
-    1,
+INSERT INTO Documento (titulo, idioma, fecha, fuente, contenido_texto, id_objeto)
+SELECT
     'Habitabilidad de la Tierra',
     'es',
     CURRENT_DATE,
     'Seed local',
     'La Tierra presenta agua liquida, atmosfera estable y temperatura media compatible con vida conocida.',
-    4
-)
-ON CONFLICT (id_doc) DO NOTHING;
+    tierra.id_objeto
+FROM Objeto_Astronomico tierra
+WHERE tierra.nombre = 'Tierra'
+AND NOT EXISTS (SELECT 1 FROM Documento WHERE titulo = 'Habitabilidad de la Tierra');
 
-INSERT INTO Telescopio (id_telescopio, nombre, tipo, ubicacion)
-VALUES (1, 'James Webb Space Telescope', 'Infrarrojo', 'Orbita L2')
-ON CONFLICT (id_telescopio) DO NOTHING;
+INSERT INTO Telescopio (nombre, tipo, ubicacion)
+SELECT 'James Webb Space Telescope', 'Infrarrojo', 'Orbita L2'
+WHERE NOT EXISTS (
+    SELECT 1 FROM Telescopio WHERE nombre = 'James Webb Space Telescope'
+);
 
-INSERT INTO Observacion (id_telescopio, id_objeto, descripcion)
-VALUES (1, 4, 'Observacion demo de condiciones planetarias.')
-ON CONFLICT DO NOTHING;
+INSERT INTO Observacion (id_telescopio, id_objeto, fecha, descripcion)
+SELECT t.id_telescopio, o.id_objeto, CURRENT_DATE, 'Observacion demo de condiciones planetarias.'
+FROM Telescopio t
+JOIN Objeto_Astronomico o ON o.nombre = 'Tierra'
+WHERE t.nombre = 'James Webb Space Telescope'
+AND NOT EXISTS (
+    SELECT 1
+    FROM Observacion obs
+    WHERE obs.id_telescopio = t.id_telescopio
+    AND obs.id_objeto = o.id_objeto
+    AND obs.descripcion = 'Observacion demo de condiciones planetarias.'
+);
