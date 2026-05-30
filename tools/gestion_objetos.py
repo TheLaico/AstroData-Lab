@@ -1,6 +1,5 @@
 """Tools MCP para gestion de objetos astronomicos y consultas estructuradas."""
 
-from datetime import date
 from typing import Any, Dict, List, Optional
 
 from mcp.types import Tool
@@ -8,37 +7,7 @@ from mcp.types import Tool
 from database.repositorio_documentos import RepositorioDocumentos
 from database.repositorio_objetos import RepositorioObjetos
 from database.repositorio_observaciones import RepositorioObservaciones
-from models.documento_model import Documento
-from models.imagen_model import Imagen
-from models.observacion_model import Observacion
-from models.telescopio_model import Telescopio
-
-
-def _dump(obj: Any) -> Dict[str, Any]:
-    if obj is None:
-        return {}
-    if hasattr(obj, "model_dump"):
-        try:
-            volcado = obj.model_dump()
-            if isinstance(volcado, dict):
-                return volcado
-        except Exception:
-            pass
-    datos = {}
-    for nombre in (
-        "id_objeto", "nombre", "descripcion_cientifica", "id_doc", "titulo",
-        "id_imagen", "ruta_archivo", "id_telescopio", "tipo", "ubicacion",
-        "id_observacion", "id_planeta", "fecha", "descripcion",
-    ):
-        if hasattr(obj, nombre):
-            valor = getattr(obj, nombre)
-            if not callable(valor):
-                datos[nombre] = valor
-    if datos:
-        return datos
-    if hasattr(obj, "__dict__"):
-        return {k: v for k, v in vars(obj).items() if not k.startswith("_")}
-    return {"valor": obj}
+from services.objetos_service import GestionObjetosService
 
 
 class GestionObjetos:
@@ -47,10 +16,12 @@ class GestionObjetos:
     TIPOS_VALIDOS = {"galaxia", "sistema_estelar", "estrella", "planeta", "luna"}
 
     def __init__(self, codificador: Any) -> None:
-        self.codificador = codificador
-        self.repo_objetos = RepositorioObjetos()
-        self.repo_documentos = RepositorioDocumentos()
-        self.repo_observaciones = RepositorioObservaciones()
+        self.service = GestionObjetosService(
+            codificador=codificador,
+            repo_objetos=RepositorioObjetos(),
+            repo_documentos=RepositorioDocumentos(),
+            repo_observaciones=RepositorioObservaciones(),
+        )
 
     def obtener_definiciones_tools(self) -> List[Tool]:
         return [
@@ -206,135 +177,32 @@ class GestionObjetos:
         descripcion_cientifica: Optional[str] = None,
         atributos: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        tipo_norm = (tipo or "").strip().lower()
-        if tipo_norm not in self.TIPOS_VALIDOS:
-            return {"error": f"Tipo de objeto no valido: {tipo}."}
-        if not isinstance(nombre, str) or not nombre.strip():
-            return {"error": "El nombre del objeto no puede estar vacio."}
-
-        try:
-            objeto = await self.repo_objetos.crear_objeto(nombre, descripcion_cientifica)
-            embedding_id = None
-            if descripcion_cientifica and descripcion_cientifica.strip():
-                vector = await self.codificador.codificar_texto(descripcion_cientifica)
-                modelo = await self.codificador.nombre_modelo()
-                documento_embedding = await self.repo_documentos.crear_documento(
-                    Documento(
-                        id_doc=-1,
-                        titulo=f"Descripcion cientifica de {nombre.strip()}",
-                        idioma="es",
-                        fecha=date.today(),
-                        fuente="Objeto_Astronomico.descripcion_cientifica",
-                        contenido_texto=descripcion_cientifica,
-                        id_objeto=getattr(objeto, "id_objeto"),
-                    )
-                )
-                embedding_id = await self.repo_documentos.guardar_embedding_texto(
-                    getattr(documento_embedding, "id_doc"),
-                    0,
-                    vector,
-                    modelo,
-                    "sentence",
-                    descripcion_cientifica,
-                )
-            return {
-                **_dump(objeto),
-                "tipo": tipo_norm,
-                "atributos": atributos or {},
-                "embedding_id": embedding_id,
-            }
-        except Exception as exc:
-            return {"error": f"Error al crear objeto astronomico: {exc}"}
+        return await self.service.crear_objeto_astronomico(
+            nombre=nombre,
+            tipo=tipo,
+            descripcion_cientifica=descripcion_cientifica,
+            atributos=atributos,
+        )
 
     async def obtener_objeto_astronomico(
         self,
         id_objeto: Optional[int] = None,
         nombre: Optional[str] = None,
     ) -> Dict[str, Any]:
-        try:
-            if id_objeto is not None:
-                id_objeto = self._to_int(id_objeto, "id_objeto")
-                objeto = await self.repo_objetos.obtener_objeto_por_id(id_objeto)
-            elif nombre:
-                objeto = await self.repo_objetos.obtener_objeto_por_nombre(nombre)
-            else:
-                return {"error": "Debe proporcionar id_objeto o nombre."}
-            if objeto is None:
-                return {"error": "Objeto astronomico no encontrado."}
-            return {"objeto": _dump(objeto)}
-        except Exception as exc:
-            return {"error": f"Error al obtener objeto astronomico: {exc}"}
+        return await self.service.obtener_objeto_astronomico(id_objeto=id_objeto, nombre=nombre)
 
     async def actualizar_objeto_astronomico(
         self,
         id_objeto: int,
         campos: Dict[str, Any],
     ) -> Dict[str, Any]:
-        id_objeto = self._to_int(id_objeto, "id_objeto")
-        if not isinstance(id_objeto, int) or id_objeto <= 0:
-            return {"error": "id_objeto debe ser un entero positivo."}
-        if not campos:
-            return {"error": "Debe proporcionar campos para actualizar."}
-
-        try:
-            embedding_regenerado = False
-            if "descripcion_cientifica" in campos:
-                nueva = campos["descripcion_cientifica"]
-                await self.repo_objetos.actualizar_descripcion(id_objeto, nueva)
-                vector = await self.codificador.codificar_texto(nueva)
-                modelo = await self.codificador.nombre_modelo()
-                documento_embedding = await self.repo_documentos.crear_documento(
-                    Documento(
-                        id_doc=-1,
-                        titulo=f"Descripcion cientifica actualizada {id_objeto}",
-                        idioma="es",
-                        fecha=date.today(),
-                        fuente="Objeto_Astronomico.descripcion_cientifica",
-                        contenido_texto=nueva,
-                        id_objeto=id_objeto,
-                    )
-                )
-                await self.repo_documentos.guardar_embedding_texto(
-                    getattr(documento_embedding, "id_doc"),
-                    0,
-                    vector,
-                    modelo,
-                    "sentence",
-                    nueva,
-                )
-                embedding_regenerado = True
-            return {
-                "id_objeto": id_objeto,
-                "campos_actualizados": list(campos.keys()),
-                "embedding_regenerado": embedding_regenerado,
-            }
-        except Exception as exc:
-            return {"error": f"Error al actualizar objeto astronomico: {exc}"}
+        return await self.service.actualizar_objeto_astronomico(id_objeto=id_objeto, campos=campos)
 
     async def eliminar_objeto_astronomico(self, id_objeto: int) -> Dict[str, Any]:
-        id_objeto = self._to_int(id_objeto, "id_objeto")
-        if not isinstance(id_objeto, int) or id_objeto <= 0:
-            return {"error": "id_objeto debe ser un entero positivo."}
-        try:
-            existente = await self.repo_objetos.obtener_objeto_por_id(id_objeto)
-            if existente is None:
-                return {"error": "No existe un objeto astronomico con ese id."}
-            eliminado = await self.repo_objetos.eliminar_objeto(id_objeto)
-            return {
-                "id_objeto": id_objeto,
-                "eliminado": bool(eliminado),
-                "confirmacion": "Objeto eliminado correctamente." if eliminado else "No se elimino el objeto.",
-            }
-        except Exception as exc:
-            return {"error": f"Error al eliminar objeto astronomico: {exc}"}
+        return await self.service.eliminar_objeto_astronomico(id_objeto=id_objeto)
 
     async def listar_planetas_habitables(self, puntaje_minimo: float = 0.7) -> Dict[str, Any]:
-        try:
-            puntaje_minimo = float(puntaje_minimo)
-            planetas = await self.repo_objetos.listar_planetas_por_habitabilidad(puntaje_minimo)
-            return {"puntaje_minimo": puntaje_minimo, "planetas": [_dump(p) for p in planetas]}
-        except Exception as exc:
-            return {"error": f"Error al listar planetas habitables: {exc}"}
+        return await self.service.listar_planetas_habitables(puntaje_minimo=puntaje_minimo)
 
     async def crear_documento_con_embeddings(
         self,
@@ -345,32 +213,14 @@ class GestionObjetos:
         fuente: Optional[str] = None,
         estrategia_chunking: str = "sentence",
     ) -> Dict[str, Any]:
-        try:
-            id_objeto = self._to_optional_int(id_objeto, "id_objeto")
-            documento = await self.repo_documentos.crear_documento(
-                Documento(
-                    id_doc=-1,
-                    titulo=titulo,
-                    idioma=idioma,
-                    fecha=date.today(),
-                    fuente=fuente,
-                    contenido_texto=contenido_texto,
-                    id_objeto=id_objeto,
-                )
-            )
-            vector = await self.codificador.codificar_texto(contenido_texto)
-            modelo = await self.codificador.nombre_modelo()
-            id_embedding = await self.repo_documentos.guardar_embedding_texto(
-                documento.id_doc,
-                0,
-                vector,
-                modelo,
-                estrategia_chunking,
-                contenido_texto,
-            )
-            return {"documento": _dump(documento), "embeddings": [id_embedding]}
-        except Exception as exc:
-            return {"error": f"Error al crear documento con embeddings: {exc}"}
+        return await self.service.crear_documento_con_embeddings(
+            titulo=titulo,
+            contenido_texto=contenido_texto,
+            id_objeto=id_objeto,
+            idioma=idioma,
+            fuente=fuente,
+            estrategia_chunking=estrategia_chunking,
+        )
 
     async def crear_imagen_con_embedding(
         self,
@@ -379,91 +229,38 @@ class GestionObjetos:
         etiquetas: Optional[List[str]] = None,
         id_doc: Optional[int] = None,
     ) -> Dict[str, Any]:
-        try:
-            id_doc = self._to_optional_int(id_doc, "id_doc")
-            imagen = await self.repo_documentos.crear_imagen(
-                Imagen(
-                    id_imagen=-1,
-                    ruta_archivo=ruta_archivo,
-                    descripcion=descripcion,
-                    etiquetas=etiquetas,
-                    id_doc=id_doc,
-                )
-            )
-            return {"imagen": _dump(imagen), "embedding_generado": False}
-        except Exception as exc:
-            return {"error": f"Error al crear imagen: {exc}"}
+        return await self.service.crear_imagen_con_embedding(
+            ruta_archivo=ruta_archivo,
+            descripcion=descripcion,
+            etiquetas=etiquetas,
+            id_doc=id_doc,
+        )
 
     async def crear_telescopio(self, nombre: str, tipo: Optional[str] = None, ubicacion: Optional[str] = None) -> Dict[str, Any]:
-        try:
-            telescopio = await self.repo_observaciones.crear_telescopio(
-                nombre=nombre,
-                tipo=tipo,
-                ubicacion=ubicacion,
-            )
-            return {"telescopio": _dump(telescopio)}
-        except Exception as exc:
-            return {"error": f"Error al crear telescopio: {exc}"}
+        return await self.service.crear_telescopio(nombre=nombre, tipo=tipo, ubicacion=ubicacion)
 
     async def obtener_telescopio(self, id_telescopio: int) -> Dict[str, Any]:
-        try:
-            id_telescopio = self._to_int(id_telescopio, "id_telescopio")
-            telescopio = await self.repo_observaciones.obtener_telescopio_por_id(id_telescopio)
-            return {"telescopio": _dump(telescopio)} if telescopio else {"error": "Telescopio no encontrado."}
-        except Exception as exc:
-            return {"error": f"Error al obtener telescopio: {exc}"}
+        return await self.service.obtener_telescopio(id_telescopio=id_telescopio)
 
     async def listar_telescopios(self) -> Dict[str, Any]:
-        try:
-            telescopios = await self.repo_observaciones.listar_telescopios()
-            return {"telescopios": [_dump(t) for t in telescopios]}
-        except Exception as exc:
-            return {"error": f"Error al listar telescopios: {exc}"}
+        return await self.service.listar_telescopios()
 
     async def crear_observacion(
         self,
         id_telescopio: int,
         id_objeto: int,
         descripcion: Optional[str] = None,
-        fecha: Optional[str | date] = None,
+        fecha: Optional[str] = None,
     ) -> Dict[str, Any]:
-        try:
-            id_telescopio = self._to_int(id_telescopio, "id_telescopio")
-            id_objeto = self._to_int(id_objeto, "id_objeto")
-            fecha_obs = date.fromisoformat(fecha) if isinstance(fecha, str) else (fecha or date.today())
-            observacion = await self.repo_observaciones.crear_observacion(
-                id_telescopio=id_telescopio,
-                id_objeto=id_objeto,
-                fecha=fecha_obs,
-                descripcion=descripcion,
-            )
-            return {"observacion": _dump(observacion)}
-        except Exception as exc:
-            return {"error": f"Error al crear observacion: {exc}"}
+        return await self.service.crear_observacion(
+            id_telescopio=id_telescopio,
+            id_objeto=id_objeto,
+            descripcion=descripcion,
+            fecha=fecha,
+        )
 
     async def listar_observaciones_por_objeto(self, id_objeto: int) -> Dict[str, Any]:
-        try:
-            id_objeto = self._to_int(id_objeto, "id_objeto")
-            obs = await self.repo_observaciones.listar_observaciones_por_objeto(id_objeto)
-            return {"observaciones": [_dump(o) for o in obs]}
-        except Exception as exc:
-            return {"error": f"Error al listar observaciones por objeto: {exc}"}
+        return await self.service.listar_observaciones_por_objeto(id_objeto=id_objeto)
 
     async def listar_observaciones_por_telescopio(self, id_telescopio: int) -> Dict[str, Any]:
-        try:
-            id_telescopio = self._to_int(id_telescopio, "id_telescopio")
-            obs = await self.repo_observaciones.listar_observaciones_por_telescopio(id_telescopio)
-            return {"observaciones": [_dump(o) for o in obs]}
-        except Exception as exc:
-            return {"error": f"Error al listar observaciones por telescopio: {exc}"}
-
-    def _to_int(self, value: Any, field_name: str) -> int:
-        try:
-            return int(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{field_name} debe ser un entero positivo.") from exc
-
-    def _to_optional_int(self, value: Any, field_name: str) -> Optional[int]:
-        if value is None or value == "":
-            return None
-        return self._to_int(value, field_name)
+        return await self.service.listar_observaciones_por_telescopio(id_telescopio=id_telescopio)

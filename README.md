@@ -21,12 +21,13 @@ AstroData Lab resuelve el problema de acceder a grandes volúmenes de datos cien
 
 ## Arquitectura
 
-El proyecto se organiza en 7 carpetas con responsabilidades bien delimitadas:
+El proyecto se organiza en capas con responsabilidades bien delimitadas:
 
 | Carpeta | Responsabilidad |
 |---|---|
 | `server/` | Punto de entrada del servidor MCP. Registra las herramientas e inicia el servidor que Claude Desktop consume. |
 | `tools/` | Lógica de negocio expuesta como herramientas MCP. Orquesta flujos RAG, CRUD, búsqueda semántica y evaluación sin implementar persistencia directa. |
+| `services/` | Casos de uso de aplicacion. Orquesta RAG, CRUD, busqueda semantica, observaciones y evaluacion sin acoplarse al protocolo MCP. |
 | `database/` | Capa de acceso a datos. Repositorios que encapsulan todas las consultas SQL y operaciones con asyncpg y pgvector. |
 | `embeddings/` | Codificadores de embeddings. Define la interfaz `CodificadorBase` e implementaciones concretas para texto (MiniLM) e imagen (CLIP). |
 | `models/` | Modelos de datos Pydantic v2. Representan las entidades del dominio (objetos astronómicos, consultas, evaluaciones, resultados). |
