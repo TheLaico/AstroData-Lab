@@ -1,9 +1,12 @@
 {
   "mcpServers": {
     "astrodata-mcp": {
-      "command": "C:\\Users\\Propietario\\Desktop\\astro\\AstroData-Lab\\.venv\\Scripts\\python.exe",
+      "command": "python",
       "args": ["server/servidor_mcp.py"],
-      "cwd": "C:\\Users\\Propietario\\Desktop\\astro\\AstroData-Lab"
+      "cwd": "REEMPLAZAR_CON_RUTA_ABSOLUTA_DEL_PROYECTO",
+      "env": {
+        "PYTHONPATH": "REEMPLAZAR_CON_RUTA_ABSOLUTA_DEL_PROYECTO"
+      }
     }
   }
 }

@@ -143,6 +143,29 @@ pytest tests/prueba_rag.py -v
 
 ---
 
+## Estado MVP estable
+
+Esta version incluye una base ejecutable para la entrega universitaria:
+
+- Servidor MCP con tools reales para RAG, CRUD astronomico, busqueda semantica y evaluacion RAGAS simplificada.
+- Scripts SQL versionados en `sql/`: `001_schema_relacional.sql`, `002_pgvector.sql` y `003_seed_data.sql`.
+- Configuracion de pruebas en `pytest.ini`; `pytest tests/` descubre `prueba_*.py`.
+- Plantilla local `config/.env.example`; copiarla a `config/.env` y ajustar credenciales.
+
+Orden recomendado para recrear la base:
+
+```bash
+psql -d astrodata -f sql/001_schema_relacional.sql
+psql -d astrodata -f sql/002_pgvector.sql
+psql -d astrodata -f sql/003_seed_data.sql
+```
+
+Para PostgreSQL local usar `DB_SSL=disable`. Para Neon u otros servicios con SSL obligatorio usar `DB_SSL=require`.
+
+Se recomienda Python 3.11 o 3.12 para evitar incompatibilidades de `torch` y `sentence-transformers`.
+
+---
+
 ## Principios de diseño
 
 | Principio SOLID | Módulo que lo implementa | Por qué |

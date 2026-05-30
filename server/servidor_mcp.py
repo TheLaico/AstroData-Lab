@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, Callable, Optional
+from typing import Any, Dict, Callable, Optional, TYPE_CHECKING
 
 # Agregar el directorio raíz al path para importar módulos locales
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -38,9 +38,9 @@ from mcp.types import Tool, TextContent
 from config.ajustes import ajustes
 from database.conexion import conexion_bd
 
-# Codificadores (embeddings)
-from embeddings.codificador_texto import CodificadorTexto
-from embeddings.codificador_imagen import CodificadorImagen
+if TYPE_CHECKING:
+    from embeddings.codificador_texto import CodificadorTexto
+    from embeddings.codificador_imagen import CodificadorImagen
 
 # Herramientas MCP
 from tools.consulta_rag import ToolsConsultaRAG
@@ -427,6 +427,9 @@ class ServidorMCPAstroData:
         seccion("Codificadores de embeddings")
         try:
             info("Cargando modelo de texto…", ajustes.modelo_texto)
+            from embeddings.codificador_texto import CodificadorTexto
+            from embeddings.codificador_imagen import CodificadorImagen
+
             codificador_texto = CodificadorTexto()
             ok("Modelo de texto listo", "384 dimensiones")
 
@@ -441,8 +444,8 @@ class ServidorMCPAstroData:
 
     async def _inicializar_herramientas(
         self,
-        codificador_texto: CodificadorTexto,
-        codificador_imagen: CodificadorImagen
+        codificador_texto: "CodificadorTexto",
+        codificador_imagen: "CodificadorImagen"
     ) -> None:
         """
         Instancia los grupos de tools e los añade a self._grupos.

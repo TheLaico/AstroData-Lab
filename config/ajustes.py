@@ -46,6 +46,13 @@ class Ajustes:
             'postgresql+asyncpg://usuario:contraseña@localhost:5432/astrodata'
         )
         
+        if self.url_base_datos.startswith('postgresql+asyncpg://'):
+            self.url_base_datos = self.url_base_datos.replace(
+                'postgresql+asyncpg://',
+                'postgresql://',
+                1
+            )
+        
         self.modelo_texto: str = os.getenv(
             'MODELO_TEXTO',
             'all-MiniLM-L6-v2'
@@ -72,6 +79,8 @@ class Ajustes:
             'DIMENSION_VECTOR_IMAGEN',
             '512'
         ))
+        
+        self.db_ssl: str = os.getenv('DB_SSL', 'require').strip().lower()
     
     def __repr__(self) -> str:
         """

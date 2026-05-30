@@ -26,12 +26,13 @@ class ConexionBD:
             Exception: Si ocurre un error inesperado al crear el pool
         """
         try:
+            ssl_config = None if ajustes.db_ssl in {"", "false", "none", "disable"} else ajustes.db_ssl
             self._pool = await asyncpg.create_pool(
                 ajustes.url_base_datos,
                 min_size=2,
                 max_size=10,
                 command_timeout=60,
-                ssl="require",
+                ssl=ssl_config,
                 init=self._inicializar_conexion,
             )
         except ValueError as e:

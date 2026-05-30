@@ -474,3 +474,51 @@ class RepositorioDocumentos:
             raise RuntimeError(
                 f"Error al guardar embedding de imagen {id_imagen}: {e}"
             ) from e
+
+    async def buscar_imagenes_similares(
+        self,
+        vector_consulta: List[float],
+        top_k: int
+    ) -> List[dict]:
+        """
+        Busca imagenes similares usando embeddings CLIP almacenados en pgvector.
+        """
+        if not vector_consulta:
+            raise ValueError("El vector de consulta no puede estar vacio")
+        if not isinstance(top_k, int) or top_k <= 0:
+            raise ValueError("top_k debe ser un entero positivo")
+
+        vector_str = "[" + ",".join(str(v) for v in vector_consulta) + "]"
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                filas = await conexion.fetch(
+                    """
+                    SELECT
+                        i.id_imagen,
+                        i.ruta_archivo,
+                        i.descripcion,
+                        i.etiquetas,
+                        i.id_doc,
+                        1 - (ei.vector <=> $1::vector) AS similitud
+                    FROM Embedding_Imagen ei
+                    JOIN Imagen i ON i.id_imagen = ei.id_imagen
+                    ORDER BY ei.vector <=> $1::vector
+                    LIMIT $2
+                    """,
+                    vector_str,
+                    top_k
+                )
+                return [
+                    {
+                        "id_imagen": fila["id_imagen"],
+                        "ruta_archivo": fila["ruta_archivo"],
+                        "descripcion": fila["descripcion"],
+                        "etiquetas": fila["etiquetas"],
+                        "id_doc": fila["id_doc"],
+                        "similitud": float(fila["similitud"]),
+                    }
+                    for fila in filas
+                ]
+        except Exception as e:
+            raise RuntimeError(f"Error al buscar imagenes similares: {e}") from e
