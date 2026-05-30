@@ -152,6 +152,8 @@ Esta version incluye una base ejecutable para la entrega universitaria:
 - Scripts SQL versionados en `sql/`: `001_schema_relacional.sql`, `002_pgvector.sql` y `003_seed_data.sql`.
 - Configuracion de pruebas en `pytest.ini`; `pytest tests/` descubre `prueba_*.py`.
 - Plantilla local `config/.env.example`; copiarla a `config/.env` y ajustar credenciales.
+- Chunking real al crear documentos con embeddings: estrategias `sentence`, `fixed` y `semantic` (MVP: `semantic` usa corte por oraciones).
+- Politica de borrado: al eliminar un objeto astronomico, sus documentos se conservan y quedan con `id_objeto = NULL`.
 
 Orden recomendado para recrear la base:
 

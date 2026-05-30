@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from models.documento_model import Documento
 from models.imagen_model import Imagen
+from services.chunking_service import ChunkingService
 from services.utils import dump_model, to_int, to_optional_int
 
 
@@ -22,6 +23,7 @@ class GestionObjetosService:
         self.repo_objetos = repo_objetos
         self.repo_documentos = repo_documentos
         self.repo_observaciones = repo_observaciones
+        self.chunking = ChunkingService()
 
     async def crear_objeto_astronomico(
         self,
@@ -111,6 +113,7 @@ class GestionObjetosService:
                 "id_objeto": id_objeto,
                 "eliminado": bool(eliminado),
                 "confirmacion": "Objeto eliminado correctamente." if eliminado else "No se elimino el objeto.",
+                "politica_documentos": "Los documentos asociados se conservan y quedan desvinculados del objeto.",
             }
         except Exception as exc:
             return {"error": f"Error al eliminar objeto astronomico: {exc}"}
@@ -145,12 +148,17 @@ class GestionObjetosService:
                     id_objeto=id_objeto,
                 )
             )
-            id_embedding = await self._guardar_embedding_documento(
+            embeddings = await self._guardar_embeddings_documento(
                 documento.id_doc,
                 contenido_texto,
                 estrategia_chunking,
             )
-            return {"documento": dump_model(documento), "embeddings": [id_embedding]}
+            return {
+                "documento": dump_model(documento),
+                "embeddings": embeddings,
+                "chunks_generados": len(embeddings),
+                "estrategia_chunking": estrategia_chunking,
+            }
         except Exception as exc:
             return {"error": f"Error al crear documento con embeddings: {exc}"}
 
@@ -249,16 +257,26 @@ class GestionObjetosService:
                 id_objeto=id_objeto,
             )
         )
-        return await self._guardar_embedding_documento(documento.id_doc, contenido, "sentence")
+        embeddings = await self._guardar_embeddings_documento(documento.id_doc, contenido, "sentence")
+        return embeddings[0] if embeddings else None
 
-    async def _guardar_embedding_documento(self, id_doc: int, contenido: str, estrategia_chunking: str) -> int:
-        vector = await self.codificador.codificar_texto(contenido)
+    async def _guardar_embeddings_documento(
+        self,
+        id_doc: int,
+        contenido: str,
+        estrategia_chunking: str,
+    ) -> List[int]:
         modelo = await self.codificador.nombre_modelo()
-        return await self.repo_documentos.guardar_embedding_texto(
-            id_doc,
-            0,
-            vector,
-            modelo,
-            estrategia_chunking,
-            contenido,
-        )
+        embeddings = []
+        for chunk in self.chunking.dividir(contenido, estrategia_chunking):
+            vector = await self.codificador.codificar_texto(chunk.contenido)
+            id_embedding = await self.repo_documentos.guardar_embedding_texto(
+                id_doc,
+                chunk.chunk_id,
+                vector,
+                modelo,
+                estrategia_chunking,
+                chunk.contenido,
+            )
+            embeddings.append(id_embedding)
+        return embeddings

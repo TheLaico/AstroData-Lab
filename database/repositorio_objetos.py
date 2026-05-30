@@ -253,10 +253,11 @@ class RepositorioObjetos:
     
     async def eliminar_objeto(self, id_objeto: int) -> bool:
         """
-        Elimina un objeto astronómico y sus dependencias en cascada.
-        
-        La cascada se maneja mediante ON DELETE CASCADE en el esquema de BD.
-        Se eliminan automáticamente: subtipos, documentos relacionados, embeddings, etc.
+        Elimina un objeto astronomico y sus dependencias directas en cascada.
+
+        Politica actual: los documentos cientificos se conservan. En el esquema
+        versionado, Documento.id_objeto usa ON DELETE SET NULL, por lo que al
+        borrar el objeto sus documentos quedan desvinculados, no eliminados.
         
         Args:
             id_objeto: ID del objeto a eliminar
