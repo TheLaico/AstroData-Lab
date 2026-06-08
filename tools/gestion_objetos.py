@@ -15,12 +15,13 @@ class GestionObjetos:
 
     TIPOS_VALIDOS = {"galaxia", "sistema_estelar", "estrella", "planeta", "luna"}
 
-    def __init__(self, codificador: Any) -> None:
+    def __init__(self, codificador: Any, codificador_imagen: Any = None) -> None:
         self.service = GestionObjetosService(
             codificador=codificador,
             repo_objetos=RepositorioObjetos(),
             repo_documentos=RepositorioDocumentos(),
             repo_observaciones=RepositorioObservaciones(),
+            codificador_imagen=codificador_imagen,
         )
 
     def obtener_definiciones_tools(self) -> List[Tool]:
@@ -97,16 +98,55 @@ class GestionObjetos:
             ),
             Tool(
                 name="crear_imagen_con_embedding",
-                description="Registra una imagen astronomica.",
+                description="Registra una imagen astronomica desde ruta, URL o base64 y genera su embedding CLIP.",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "ruta_archivo": {"type": "string"},
+                        "ruta_archivo": {"type": "string", "default": ""},
+                        "imagen_base64": {"type": ["string", "null"]},
+                        "extension": {"type": "string", "default": "png"},
                         "descripcion": {"type": ["string", "null"]},
                         "etiquetas": {"type": ["array", "null"], "items": {"type": "string"}},
                         "id_doc": {"type": ["integer", "string", "null"]},
                     },
-                    "required": ["ruta_archivo"],
+                },
+            ),
+            Tool(
+                name="generar_embeddings_imagenes_pendientes",
+                description="Genera embeddings CLIP para imagenes registradas que todavia no tienen Embedding_Imagen.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limite": {"type": ["integer", "string"], "default": 50},
+                    },
+                },
+            ),
+            Tool(
+                name="reemplazar_imagen_con_embedding",
+                description="Reemplaza la ruta, URL o contenido base64 de una imagen existente y regenera su embedding CLIP.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_imagen": {"type": ["integer", "string"]},
+                        "ruta_archivo": {"type": "string", "default": ""},
+                        "imagen_base64": {"type": ["string", "null"]},
+                        "extension": {"type": "string", "default": "png"},
+                        "descripcion": {"type": ["string", "null"]},
+                        "etiquetas": {"type": ["array", "null"], "items": {"type": "string"}},
+                        "id_doc": {"type": ["integer", "string", "null"]},
+                    },
+                    "required": ["id_imagen"],
+                },
+            ),
+            Tool(
+                name="eliminar_imagen_astronomica",
+                description="Elimina una imagen astronomica registrada y sus embeddings asociados.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id_imagen": {"type": ["integer", "string"]},
+                    },
+                    "required": ["id_imagen"],
                 },
             ),
             Tool(
@@ -224,17 +264,47 @@ class GestionObjetos:
 
     async def crear_imagen_con_embedding(
         self,
-        ruta_archivo: str,
+        ruta_archivo: str = "",
         descripcion: Optional[str] = None,
         etiquetas: Optional[List[str]] = None,
         id_doc: Optional[int] = None,
+        imagen_base64: Optional[str] = None,
+        extension: str = "png",
     ) -> Dict[str, Any]:
         return await self.service.crear_imagen_con_embedding(
             ruta_archivo=ruta_archivo,
             descripcion=descripcion,
             etiquetas=etiquetas,
             id_doc=id_doc,
+            imagen_base64=imagen_base64,
+            extension=extension,
         )
+
+    async def generar_embeddings_imagenes_pendientes(self, limite: int = 50) -> Dict[str, Any]:
+        return await self.service.generar_embeddings_imagenes_pendientes(limite=limite)
+
+    async def reemplazar_imagen_con_embedding(
+        self,
+        id_imagen: int,
+        ruta_archivo: str = "",
+        descripcion: Optional[str] = None,
+        etiquetas: Optional[List[str]] = None,
+        id_doc: Optional[int] = None,
+        imagen_base64: Optional[str] = None,
+        extension: str = "png",
+    ) -> Dict[str, Any]:
+        return await self.service.reemplazar_imagen_con_embedding(
+            id_imagen=id_imagen,
+            ruta_archivo=ruta_archivo,
+            descripcion=descripcion,
+            etiquetas=etiquetas,
+            id_doc=id_doc,
+            imagen_base64=imagen_base64,
+            extension=extension,
+        )
+
+    async def eliminar_imagen_astronomica(self, id_imagen: int) -> Dict[str, Any]:
+        return await self.service.eliminar_imagen_astronomica(id_imagen=id_imagen)
 
     async def crear_telescopio(self, nombre: str, tipo: Optional[str] = None, ubicacion: Optional[str] = None) -> Dict[str, Any]:
         return await self.service.crear_telescopio(nombre=nombre, tipo=tipo, ubicacion=ubicacion)

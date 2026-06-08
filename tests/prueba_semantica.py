@@ -34,6 +34,16 @@ def mock_codificador(vector_ejemplo):
 
 
 @pytest.fixture
+def mock_codificador_imagen():
+    """Fixture con codificador CLIP mockeado."""
+    codificador = MagicMock()
+    codificador.codificar_texto = AsyncMock(return_value=[0.3] * 512)
+    codificador.codificar_imagen = AsyncMock(return_value=[0.4] * 512)
+    codificador.nombre_modelo = AsyncMock(return_value="openai/clip-vit-base-patch32")
+    return codificador
+
+
+@pytest.fixture
 def documentos_ejemplo() -> List[dict]:
     """Fixture con lista de documentos de prueba desordenados por similitud."""
     return [
@@ -135,8 +145,8 @@ async def test_busqueda_documentos_filtra_estrategia(
 
 
 @pytest.mark.asyncio
-async def test_busqueda_imagenes_vectoriza_con_texto(
-    mock_codificador, mock_repo_documentos, mock_repo_objetos
+async def test_busqueda_imagenes_vectoriza_con_clip(
+    mock_codificador, mock_codificador_imagen, mock_repo_documentos, mock_repo_objetos
 ):
     """Verifica que buscar_imagenes_semanticas use CodificadorTexto (no
     CodificadorImagen) para vectorizar la descripción de búsqueda."""
@@ -144,13 +154,57 @@ async def test_busqueda_imagenes_vectoriza_con_texto(
          patch("tools.busqueda_semantica.RepositorioObjetos", return_value=mock_repo_objetos):
 
         from tools.busqueda_semantica import BusquedaSematica
-        busqueda = BusquedaSematica(codificador=mock_codificador)
+        busqueda = BusquedaSematica(
+            codificador=mock_codificador,
+            codificador_imagen=mock_codificador_imagen,
+        )
         await busqueda.buscar_imagenes_semanticas(
             descripcion="Nebulosa roja con estrellas brillantes", top_k=3
         )
 
     # El codificador_texto debe haber sido usado para vectorizar
-    mock_codificador.codificar_texto.assert_called_once()
+    mock_codificador_imagen.codificar_texto.assert_called_once()
+    mock_codificador.codificar_texto.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_obtener_info_objeto_por_imagen_retorna_respuesta_textual(
+    mock_codificador, mock_codificador_imagen, mock_repo_documentos, mock_repo_objetos
+):
+    """Verifica que una busqueda por imagen pueda devolver informacion del objeto."""
+    mock_repo_documentos.buscar_imagenes_similares = AsyncMock(return_value=[
+        {
+            "id_imagen": 7,
+            "ruta_archivo": "/imgs/saturno.jpg",
+            "descripcion": "Planeta con anillos",
+            "etiquetas": "planeta,anillos",
+            "id_doc": 3,
+            "titulo_documento": "Saturno",
+            "fuente_documento": "catalogo",
+            "id_objeto": 9,
+            "nombre_objeto": "Saturno",
+            "tipo_objeto": "planeta",
+            "descripcion_cientifica": "Planeta gigante gaseoso con sistema de anillos.",
+            "similitud": 0.97,
+        }
+    ])
+
+    with patch("tools.busqueda_semantica.RepositorioDocumentos", return_value=mock_repo_documentos), \
+         patch("tools.busqueda_semantica.RepositorioObjetos", return_value=mock_repo_objetos):
+
+        from tools.busqueda_semantica import BusquedaSematica
+        busqueda = BusquedaSematica(
+            codificador=mock_codificador,
+            codificador_imagen=mock_codificador_imagen,
+        )
+        resultado = await busqueda.obtener_info_objeto_por_imagen(
+            ruta_imagen="/tmp/consulta.jpg",
+            top_k=1,
+        )
+
+    assert "Saturno" in resultado["respuesta_textual"]
+    assert resultado["objeto_detectado"]["tipo"] == "planeta"
+    mock_codificador_imagen.codificar_imagen.assert_called_once_with("/tmp/consulta.jpg")
 
 
 @pytest.mark.asyncio

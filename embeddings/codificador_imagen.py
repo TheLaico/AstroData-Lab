@@ -10,8 +10,11 @@ bloquear el event loop de asyncio durante el cómputo síncrono de PyTorch.
 """
 
 import asyncio
+import tempfile
+import urllib.request
 from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
 import torch
 from PIL import Image
@@ -79,9 +82,9 @@ class CodificadorImagen(CodificadorBase):
         entradas = {k: v.to(self._device) for k, v in entradas.items()}
 
         with torch.no_grad():
-            salida = self._modelo(**entradas)
-            embedding = salida.image_embeds[0]
+            salida = self._modelo.get_image_features(**entradas)
 
+        embedding = self._extraer_embedding(salida, "imagen")
         embedding_normalizado = embedding / embedding.norm()
         return embedding_normalizado.cpu().tolist()
 
@@ -99,9 +102,9 @@ class CodificadorImagen(CodificadorBase):
         entradas = {k: v.to(self._device) for k, v in entradas.items()}
 
         with torch.no_grad():
-            salida = self._modelo(**entradas)
-            embedding = salida.text_embeds[0]
+            salida = self._modelo.get_text_features(**entradas)
 
+        embedding = self._extraer_embedding(salida, "texto")
         embedding_normalizado = embedding / embedding.norm()
         return embedding_normalizado.cpu().tolist()
 
@@ -119,11 +122,62 @@ class CodificadorImagen(CodificadorBase):
         entradas = {k: v.to(self._device) for k, v in entradas.items()}
 
         with torch.no_grad():
-            salida = self._modelo(**entradas)
-            embeddings = salida.text_embeds
+            salida = self._modelo.get_text_features(**entradas)
 
+        embeddings = self._extraer_embeddings_batch(salida, "texto")
         embeddings_normalizados = embeddings / embeddings.norm(dim=1, keepdim=True)
         return embeddings_normalizados.cpu().tolist()
+
+    def _extraer_embedding(self, salida, modalidad: str):
+        """Normaliza salidas de distintas versiones de Transformers a tensor 1D."""
+        embeddings = self._extraer_embeddings_batch(salida, modalidad)
+        return embeddings.reshape(-1, embeddings.shape[-1])[0]
+
+    def _extraer_embeddings_batch(self, salida, modalidad: str):
+        """Convierte Tensor o ModelOutput de CLIP en tensor batch x dimension."""
+        if hasattr(salida, "reshape") and hasattr(salida, "shape"):
+            return salida.reshape(-1, salida.shape[-1])
+
+        if hasattr(salida, "pooler_output") and salida.pooler_output is not None:
+            embeddings = salida.pooler_output
+            embeddings = self._aplicar_proyeccion_si_corresponde(embeddings, modalidad)
+            return embeddings.reshape(-1, embeddings.shape[-1])
+
+        if hasattr(salida, "last_hidden_state") and salida.last_hidden_state is not None:
+            embeddings = salida.last_hidden_state[:, 0, :]
+            embeddings = self._aplicar_proyeccion_si_corresponde(embeddings, modalidad)
+            return embeddings.reshape(-1, embeddings.shape[-1])
+
+        raise RuntimeError(f"No se pudo extraer embedding CLIP de {type(salida).__name__}")
+
+    def _obtener_proyeccion(self, modalidad: str):
+        if modalidad == "texto":
+            return getattr(self._modelo, "text_projection", None)
+        proyeccion = getattr(self._modelo, "visual_projection", None)
+        if proyeccion is not None:
+            return proyeccion
+        return getattr(self._modelo, "image_projection", None)
+
+    def _aplicar_proyeccion_si_corresponde(self, embeddings, modalidad: str):
+        if embeddings.shape[-1] == self._dimension:
+            return embeddings
+
+        proyeccion = self._obtener_proyeccion(modalidad)
+        if proyeccion is None:
+            return embeddings
+
+        if callable(proyeccion) and hasattr(proyeccion, "weight"):
+            entrada_esperada = proyeccion.weight.shape[1]
+            if embeddings.shape[-1] == entrada_esperada:
+                return proyeccion(embeddings)
+            return embeddings
+
+        if hasattr(proyeccion, "shape") and len(proyeccion.shape) == 2:
+            entrada_esperada = proyeccion.shape[0]
+            if embeddings.shape[-1] == entrada_esperada:
+                return embeddings @ proyeccion
+
+        return embeddings
 
     # ------------------------------------------------------------------
     # Interfaz pública async — delegan al executor para no bloquear el loop
@@ -150,14 +204,21 @@ class CodificadorImagen(CodificadorBase):
         if not isinstance(ruta_imagen, str):
             raise ValueError("La ruta debe ser una cadena de texto")
 
-        ruta_path = Path(ruta_imagen)
-        if not ruta_path.exists():
-            raise FileNotFoundError(f"El archivo de imagen no existe: {ruta_imagen}")
+        ruta_temporal = None
+        if self._es_url(ruta_imagen):
+            ruta_temporal = await self._descargar_imagen_temporal(ruta_imagen)
+            ruta_a_codificar = str(ruta_temporal)
+        else:
+            ruta_path = Path(ruta_imagen)
+            if not ruta_path.exists():
+                raise FileNotFoundError(f"El archivo de imagen no existe: {ruta_imagen}")
+            ruta_a_codificar = ruta_imagen
 
         formatos_soportados = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.fits'}
-        if ruta_path.suffix.lower() not in formatos_soportados:
+        ruta_path_validacion = Path(ruta_a_codificar)
+        if ruta_path_validacion.suffix.lower() not in formatos_soportados:
             raise ValueError(
-                f"Formato no soportado: {ruta_path.suffix}. "
+                f"Formato no soportado: {ruta_path_validacion.suffix}. "
                 f"Válidos: {', '.join(formatos_soportados)}"
             )
 
@@ -166,12 +227,18 @@ class CodificadorImagen(CodificadorBase):
             return await loop.run_in_executor(
                 None,
                 self._encode_imagen_sync,
-                ruta_imagen
+                ruta_a_codificar
             )
         except (FileNotFoundError, ValueError):
             raise
         except Exception as e:
             raise RuntimeError(f"Error al codificar imagen: {e}") from e
+        finally:
+            if ruta_temporal is not None:
+                try:
+                    ruta_temporal.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     async def codificar_texto(self, texto: str) -> List[float]:
         """
@@ -267,3 +334,19 @@ class CodificadorImagen(CodificadorBase):
             Nombre del modelo (ej: 'openai/clip-vit-base-patch32')
         """
         return self._nombre_modelo
+
+    def _es_url(self, valor: str) -> bool:
+        partes = urlparse(valor)
+        return partes.scheme in {"http", "https"} and bool(partes.netloc)
+
+    async def _descargar_imagen_temporal(self, url: str) -> Path:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._descargar_imagen_temporal_sync, url)
+
+    def _descargar_imagen_temporal_sync(self, url: str) -> Path:
+        suffix = Path(urlparse(url).path).suffix.lower() or ".jpg"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as archivo:
+            request = urllib.request.Request(url, headers={"User-Agent": "AstroData-Lab/1.0"})
+            with urllib.request.urlopen(request, timeout=30) as respuesta:
+                archivo.write(respuesta.read())
+            return Path(archivo.name)

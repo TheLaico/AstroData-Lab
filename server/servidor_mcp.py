@@ -47,6 +47,7 @@ from tools.consulta_rag import ToolsConsultaRAG
 from tools.gestion_objetos import GestionObjetos
 from tools.busqueda_semantica import BusquedaSematica
 from tools.evaluacion_ragas import ToolsEvaluacionRAGAS
+from tools.presentacion import ToolsPresentacionAstroData
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -125,6 +126,12 @@ class GrupoGestionObjetos(ToolGroup):
             return await self._tools.crear_documento_con_embeddings(**argumentos)
         if nombre_tool == "crear_imagen_con_embedding":
             return await self._tools.crear_imagen_con_embedding(**argumentos)
+        if nombre_tool == "generar_embeddings_imagenes_pendientes":
+            return await self._tools.generar_embeddings_imagenes_pendientes(**argumentos)
+        if nombre_tool == "reemplazar_imagen_con_embedding":
+            return await self._tools.reemplazar_imagen_con_embedding(**argumentos)
+        if nombre_tool == "eliminar_imagen_astronomica":
+            return await self._tools.eliminar_imagen_astronomica(**argumentos)
         if nombre_tool == "crear_telescopio":
             return await self._tools.crear_telescopio(**argumentos)
         if nombre_tool == "obtener_telescopio":
@@ -152,6 +159,12 @@ class GrupoBusquedaSemantica(ToolGroup):
     async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
         if nombre_tool == "encontrar_planetas_similares":
             return await self._tools.encontrar_planetas_similares(**argumentos)
+        if nombre_tool == "buscar_imagenes_por_descripcion":
+            return await self._tools.buscar_imagenes_por_descripcion(**argumentos)
+        if nombre_tool == "buscar_imagenes_similares":
+            return await self._tools.buscar_imagenes_similares(**argumentos)
+        if nombre_tool == "obtener_info_objeto_por_imagen":
+            return await self._tools.obtener_info_objeto_por_imagen(**argumentos)
         return {'error': f'Herramienta desconocida en GrupoBusquedaSemantica: {nombre_tool}'}
 
 
@@ -170,6 +183,21 @@ class GrupoEvaluacionRAGAS(ToolGroup):
         if nombre_tool == "obtener_historial_evaluaciones":
             return await self._tools.obtener_historial_evaluaciones(**argumentos)
         return {'error': f'Herramienta desconocida en GrupoEvaluacionRAGAS: {nombre_tool}'}
+
+
+class GrupoPresentacion(ToolGroup):
+    """Adaptador que expone la bienvenida de AstroData Lab como ToolGroup."""
+
+    def __init__(self, tools: ToolsPresentacionAstroData) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "astro_data_lab":
+            return await self._tools.astro_data_lab(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoPresentacion: {nombre_tool}'}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -280,6 +308,7 @@ def tabla_tools(tools: list) -> None:
     print(f"  {C.DIM}{'─' * 40}{'─' * 20}{C.RESET}", file=sys.stderr)
 
     grupos = {
+        "astro_data_lab":                "Presentacion",
         "rag_query":                     "Consulta RAG",
         "obtener_contexto_objeto":       "Consulta RAG",
         "crear_objeto_astronomico":      "Gestión",
@@ -287,7 +316,13 @@ def tabla_tools(tools: list) -> None:
         "actualizar_objeto_astronomico": "Gestión",
         "eliminar_objeto_astronomico":   "Gestión",
         "listar_planetas_habitables":    "Gestión",
+        "generar_embeddings_imagenes_pendientes": "Gestión",
+        "reemplazar_imagen_con_embedding": "Gestión",
+        "eliminar_imagen_astronomica": "Gestión",
         "encontrar_planetas_similares":  "Búsqueda",
+        "buscar_imagenes_por_descripcion": "Búsqueda",
+        "buscar_imagenes_similares":     "Búsqueda",
+        "obtener_info_objeto_por_imagen": "Búsqueda",
         "evaluar_respuesta_rag":         "Evaluación",
         "obtener_historial_evaluaciones": "Evaluación",
     }
@@ -297,6 +332,7 @@ def tabla_tools(tools: list) -> None:
         "Gestión":      C.BLUE,
         "Búsqueda":     C.MAGENTA,
         "Evaluación":   C.YELLOW,
+        "Presentacion": C.GREEN,
     }
 
     for tool in tools:
@@ -458,6 +494,12 @@ class ServidorMCPAstroData:
         """
         seccion("Herramientas MCP")
         try:
+            info("Instanciando GrupoPresentacion")
+            self._grupos.append(
+                GrupoPresentacion(ToolsPresentacionAstroData())
+            )
+            ok("GrupoPresentacion", "Demo de apertura")
+
             info("Instanciando GrupoConsultaRAG")
             self._grupos.append(
                 GrupoConsultaRAG(ToolsConsultaRAG(codificador_texto))
@@ -466,15 +508,15 @@ class ServidorMCPAstroData:
 
             info("Instanciando GrupoGestionObjetos")
             self._grupos.append(
-                GrupoGestionObjetos(GestionObjetos(codificador_texto))
+                GrupoGestionObjetos(GestionObjetos(codificador_texto, codificador_imagen))
             )
-            ok("GrupoGestionObjetos", "DIP: CodificadorTexto")
+            ok("GrupoGestionObjetos", "DIP: CodificadorTexto + CodificadorImagen")
 
             info("Instanciando GrupoBusquedaSemantica")
             self._grupos.append(
-                GrupoBusquedaSemantica(BusquedaSematica(codificador_texto))
+                GrupoBusquedaSemantica(BusquedaSematica(codificador_texto, codificador_imagen))
             )
-            ok("GrupoBusquedaSemantica", "DIP: CodificadorTexto")
+            ok("GrupoBusquedaSemantica", "DIP: CodificadorTexto + CodificadorImagen")
 
             info("Instanciando GrupoEvaluacionRAGAS")
             self._grupos.append(

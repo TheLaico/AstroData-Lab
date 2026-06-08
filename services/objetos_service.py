@@ -1,6 +1,9 @@
 """Servicio de aplicacion para gestion de objetos y observaciones."""
 
+import base64
+import uuid
 from datetime import date
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from models.documento_model import Documento
@@ -18,8 +21,10 @@ class GestionObjetosService:
         repo_objetos: Any,
         repo_documentos: Any,
         repo_observaciones: Any,
+        codificador_imagen: Any = None,
     ) -> None:
         self.codificador = codificador
+        self.codificador_imagen = codificador_imagen or codificador
         self.repo_objetos = repo_objetos
         self.repo_documentos = repo_documentos
         self.repo_observaciones = repo_observaciones
@@ -164,25 +169,164 @@ class GestionObjetosService:
 
     async def crear_imagen_con_embedding(
         self,
-        ruta_archivo: str,
+        ruta_archivo: str = "",
         descripcion: Optional[str] = None,
         etiquetas: Optional[List[str]] = None,
         id_doc: Optional[int] = None,
+        imagen_base64: Optional[str] = None,
+        extension: str = "png",
     ) -> Dict[str, Any]:
         try:
             id_doc = to_optional_int(id_doc, "id_doc")
+            if not ruta_archivo and not imagen_base64:
+                return {"error": "Debe proporcionar ruta_archivo o imagen_base64."}
+            ruta_a_registrar = ruta_archivo
+            if imagen_base64:
+                ruta_a_registrar = str(self._guardar_imagen_base64(imagen_base64, extension))
+
             imagen = await self.repo_documentos.crear_imagen(
                 Imagen(
                     id_imagen=-1,
-                    ruta_archivo=ruta_archivo,
+                    ruta_archivo=ruta_a_registrar,
                     descripcion=descripcion,
                     etiquetas=etiquetas,
                     id_doc=id_doc,
                 )
             )
-            return {"imagen": dump_model(imagen), "embedding_generado": False}
+            vector = await self.codificador_imagen.codificar_imagen(ruta_a_registrar)
+            modelo = await self.codificador_imagen.nombre_modelo()
+            id_embedding = await self.repo_documentos.guardar_embedding_imagen(
+                imagen.id_imagen,
+                vector,
+                modelo,
+            )
+            return {
+                "imagen": dump_model(imagen),
+                "embedding_generado": True,
+                "id_embedding": id_embedding,
+                "modelo_embedding": modelo,
+            }
         except Exception as exc:
             return {"error": f"Error al crear imagen: {exc}"}
+
+    async def reemplazar_imagen_con_embedding(
+        self,
+        id_imagen: int,
+        ruta_archivo: str = "",
+        descripcion: Optional[str] = None,
+        etiquetas: Optional[List[str]] = None,
+        id_doc: Optional[int] = None,
+        imagen_base64: Optional[str] = None,
+        extension: str = "png",
+    ) -> Dict[str, Any]:
+        try:
+            id_imagen = to_int(id_imagen, "id_imagen")
+            id_doc = to_optional_int(id_doc, "id_doc")
+            if not ruta_archivo and not imagen_base64:
+                return {"error": "Debe proporcionar ruta_archivo o imagen_base64."}
+
+            ruta_a_registrar = ruta_archivo
+            if imagen_base64:
+                ruta_a_registrar = str(self._guardar_imagen_base64(imagen_base64, extension))
+
+            imagen = await self.repo_documentos.actualizar_imagen(
+                Imagen(
+                    id_imagen=id_imagen,
+                    ruta_archivo=ruta_a_registrar,
+                    descripcion=descripcion,
+                    etiquetas=etiquetas,
+                    id_doc=id_doc,
+                )
+            )
+            embeddings_eliminados = await self.repo_documentos.eliminar_embeddings_imagen(id_imagen)
+            vector = await self.codificador_imagen.codificar_imagen(ruta_a_registrar)
+            modelo = await self.codificador_imagen.nombre_modelo()
+            id_embedding = await self.repo_documentos.guardar_embedding_imagen(
+                id_imagen,
+                vector,
+                modelo,
+            )
+            return {
+                "imagen": dump_model(imagen),
+                "embedding_generado": True,
+                "id_embedding": id_embedding,
+                "embeddings_eliminados": embeddings_eliminados,
+                "modelo_embedding": modelo,
+            }
+        except Exception as exc:
+            return {"error": f"Error al reemplazar imagen: {exc}"}
+
+    async def eliminar_imagen_astronomica(self, id_imagen: int) -> Dict[str, Any]:
+        try:
+            id_imagen = to_int(id_imagen, "id_imagen")
+            if id_imagen <= 0:
+                return {"error": "id_imagen debe ser un entero positivo."}
+
+            eliminada = await self.repo_documentos.eliminar_imagen(id_imagen)
+            if not eliminada:
+                return {"error": "No existe una imagen con ese id.", "id_imagen": id_imagen}
+            return {
+                "id_imagen": id_imagen,
+                "eliminada": True,
+                "confirmacion": "Imagen eliminada correctamente. Sus embeddings asociados se eliminaron por cascada.",
+            }
+        except Exception as exc:
+            return {"error": f"Error al eliminar imagen: {exc}"}
+
+    def _guardar_imagen_base64(self, imagen_base64: str, extension: str) -> Path:
+        contenido = imagen_base64.strip()
+        if "," in contenido and contenido.lower().startswith("data:"):
+            contenido = contenido.split(",", 1)[1]
+
+        extension_limpia = (extension or "png").strip().lower().lstrip(".")
+        directorio = Path(__file__).resolve().parent.parent / "database" / "imagenes"
+        directorio.mkdir(parents=True, exist_ok=True)
+
+        ruta = directorio / f"{uuid.uuid4().hex}.{extension_limpia}"
+        ruta.write_bytes(base64.b64decode(contenido))
+        return ruta
+
+    async def generar_embeddings_imagenes_pendientes(self, limite: int = 50) -> Dict[str, Any]:
+        try:
+            limite = int(limite)
+            if limite <= 0:
+                return {"error": "limite debe ser un entero positivo."}
+
+            imagenes = await self.repo_documentos.listar_imagenes_sin_embedding(limite)
+            modelo = await self.codificador_imagen.nombre_modelo()
+            generadas = []
+            errores = []
+
+            for imagen in imagenes:
+                try:
+                    vector = await self.codificador_imagen.codificar_imagen(imagen.ruta_archivo)
+                    id_embedding = await self.repo_documentos.guardar_embedding_imagen(
+                        imagen.id_imagen,
+                        vector,
+                        modelo,
+                    )
+                    generadas.append({
+                        "id_imagen": imagen.id_imagen,
+                        "ruta_archivo": imagen.ruta_archivo,
+                        "id_embedding": id_embedding,
+                    })
+                except Exception as exc:
+                    errores.append({
+                        "id_imagen": imagen.id_imagen,
+                        "ruta_archivo": imagen.ruta_archivo,
+                        "error": str(exc),
+                    })
+
+            return {
+                "pendientes_encontradas": len(imagenes),
+                "embeddings_generados": generadas,
+                "errores": errores,
+                "total_generados": len(generadas),
+                "total_errores": len(errores),
+                "modelo_embedding": modelo,
+            }
+        except Exception as exc:
+            return {"error": f"Error al generar embeddings pendientes: {exc}"}
 
     async def crear_telescopio(self, nombre: str, tipo: Optional[str] = None, ubicacion: Optional[str] = None) -> Dict[str, Any]:
         try:

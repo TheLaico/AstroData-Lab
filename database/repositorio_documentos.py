@@ -222,6 +222,112 @@ class RepositorioDocumentos:
         except Exception as e:
             raise RuntimeError(f"Error al crear imagen: {e}") from e
 
+    async def listar_imagenes_sin_embedding(self, limite: int = 50) -> List[Imagen]:
+        """
+        Lista imagenes que existen en Imagen pero no tienen Embedding_Imagen.
+        """
+        if not isinstance(limite, int) or limite <= 0:
+            raise ValueError("limite debe ser un entero positivo")
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                filas = await conexion.fetch(
+                    """
+                    SELECT i.id_imagen, i.ruta_archivo, i.descripcion, i.etiquetas, i.id_doc
+                    FROM Imagen i
+                    LEFT JOIN Embedding_Imagen ei ON ei.id_imagen = i.id_imagen
+                    WHERE ei.id_embedding IS NULL
+                    ORDER BY i.id_imagen
+                    LIMIT $1
+                    """,
+                    limite
+                )
+                return [
+                    Imagen(
+                        id_imagen=fila["id_imagen"],
+                        ruta_archivo=fila["ruta_archivo"],
+                        descripcion=fila["descripcion"],
+                        etiquetas=self._deserializar_etiquetas(fila["etiquetas"]),
+                        id_doc=fila["id_doc"],
+                    )
+                    for fila in filas
+                ]
+        except Exception as e:
+            raise RuntimeError(f"Error al listar imagenes sin embedding: {e}") from e
+
+    async def actualizar_imagen(self, datos: Imagen) -> Imagen:
+        """
+        Actualiza una imagen existente y devuelve sus datos actuales.
+        """
+        if not isinstance(datos.id_imagen, int) or datos.id_imagen <= 0:
+            raise ValueError("id_imagen debe ser un entero positivo")
+        if not datos.ruta_archivo or not datos.ruta_archivo.strip():
+            raise ValueError("La ruta del archivo no puede estar vacia")
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                fila = await conexion.fetchrow(
+                    """
+                    UPDATE Imagen
+                    SET ruta_archivo = $2,
+                        descripcion = $3,
+                        etiquetas = $4,
+                        id_doc = $5
+                    WHERE id_imagen = $1
+                    RETURNING id_imagen, ruta_archivo, descripcion, etiquetas, id_doc
+                    """,
+                    datos.id_imagen,
+                    datos.ruta_archivo.strip(),
+                    datos.descripcion,
+                    self._serializar_etiquetas(datos.etiquetas),
+                    datos.id_doc,
+                )
+                if not fila:
+                    raise ValueError(f"No existe imagen con id {datos.id_imagen}")
+                return Imagen(
+                    id_imagen=fila["id_imagen"],
+                    ruta_archivo=fila["ruta_archivo"],
+                    descripcion=fila["descripcion"],
+                    etiquetas=self._deserializar_etiquetas(fila["etiquetas"]),
+                    id_doc=fila["id_doc"],
+                )
+        except Exception as e:
+            raise RuntimeError(f"Error al actualizar imagen {datos.id_imagen}: {e}") from e
+
+    async def eliminar_embeddings_imagen(self, id_imagen: int) -> int:
+        """
+        Elimina embeddings existentes de una imagen para regenerarlos.
+        """
+        if not isinstance(id_imagen, int) or id_imagen <= 0:
+            raise ValueError("id_imagen debe ser un entero positivo")
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                resultado = await conexion.execute(
+                    "DELETE FROM Embedding_Imagen WHERE id_imagen = $1",
+                    id_imagen,
+                )
+                return int(resultado.split()[-1])
+        except Exception as e:
+            raise RuntimeError(f"Error al eliminar embeddings de imagen {id_imagen}: {e}") from e
+
+    async def eliminar_imagen(self, id_imagen: int) -> bool:
+        """
+        Elimina una imagen. Sus embeddings se eliminan por ON DELETE CASCADE.
+        """
+        if not isinstance(id_imagen, int) or id_imagen <= 0:
+            raise ValueError("id_imagen debe ser un entero positivo")
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                resultado = await conexion.execute(
+                    "DELETE FROM Imagen WHERE id_imagen = $1",
+                    id_imagen,
+                )
+                return resultado != "DELETE 0"
+        except Exception as e:
+            raise RuntimeError(f"Error al eliminar imagen {id_imagen}: {e}") from e
+
     # ------------------------------------------------------------------
     # OPERACIONES DE EMBEDDINGS DE TEXTO (pgvector)
     # ------------------------------------------------------------------
@@ -234,6 +340,11 @@ class RepositorioDocumentos:
             for tag in etiquetas
             if tag is not None and str(tag).strip()
         )
+
+    def _deserializar_etiquetas(self, etiquetas: Optional[str]) -> Optional[List[str]]:
+        if not etiquetas:
+            return None
+        return [tag.strip() for tag in etiquetas.split(",") if tag.strip()]
 
     async def guardar_embedding_texto(
         self,
@@ -492,23 +603,45 @@ class RepositorioDocumentos:
 
         try:
             async with conexion_bd.obtener_conexion() as conexion:
-                filas = await conexion.fetch(
-                    """
-                    SELECT
-                        i.id_imagen,
-                        i.ruta_archivo,
-                        i.descripcion,
-                        i.etiquetas,
-                        i.id_doc,
-                        1 - (ei.vector <=> $1::vector) AS similitud
-                    FROM Embedding_Imagen ei
-                    JOIN Imagen i ON i.id_imagen = ei.id_imagen
-                    ORDER BY ei.vector <=> $1::vector
-                    LIMIT $2
-                    """,
-                    vector_str,
-                    top_k
-                )
+                async with conexion.transaction():
+                    await conexion.execute("SET LOCAL ivfflat.probes = 100")
+                    filas = await conexion.fetch(
+                        """
+                        SELECT
+                            i.id_imagen,
+                            i.ruta_archivo,
+                            i.descripcion,
+                            i.etiquetas,
+                            i.id_doc,
+                            d.titulo AS titulo_documento,
+                            d.fuente AS fuente_documento,
+                            o.id_objeto,
+                            o.nombre AS nombre_objeto,
+                            o.descripcion_cientifica,
+                            CASE
+                                WHEN g.id_objeto IS NOT NULL THEN 'galaxia'
+                                WHEN se.id_objeto IS NOT NULL THEN 'sistema_estelar'
+                                WHEN e.id_objeto IS NOT NULL THEN 'estrella'
+                                WHEN p.id_objeto IS NOT NULL THEN 'planeta'
+                                WHEN l.id_objeto IS NOT NULL THEN 'luna'
+                                ELSE NULL
+                            END AS tipo_objeto,
+                            1 - (ei.vector <=> $1::vector) AS similitud
+                        FROM Embedding_Imagen ei
+                        JOIN Imagen i ON i.id_imagen = ei.id_imagen
+                        LEFT JOIN Documento d ON d.id_doc = i.id_doc
+                        LEFT JOIN Objeto_Astronomico o ON o.id_objeto = d.id_objeto
+                        LEFT JOIN Galaxia g ON g.id_objeto = o.id_objeto
+                        LEFT JOIN Sistema_Estelar se ON se.id_objeto = o.id_objeto
+                        LEFT JOIN Estrella e ON e.id_objeto = o.id_objeto
+                        LEFT JOIN Planeta p ON p.id_objeto = o.id_objeto
+                        LEFT JOIN Luna l ON l.id_objeto = o.id_objeto
+                        ORDER BY ei.vector <=> $1::vector
+                        LIMIT $2
+                        """,
+                        vector_str,
+                        top_k
+                    )
                 return [
                     {
                         "id_imagen": fila["id_imagen"],
@@ -516,6 +649,12 @@ class RepositorioDocumentos:
                         "descripcion": fila["descripcion"],
                         "etiquetas": fila["etiquetas"],
                         "id_doc": fila["id_doc"],
+                        "titulo_documento": fila["titulo_documento"],
+                        "fuente_documento": fila["fuente_documento"],
+                        "id_objeto": fila["id_objeto"],
+                        "nombre_objeto": fila["nombre_objeto"],
+                        "descripcion_cientifica": fila["descripcion_cientifica"],
+                        "tipo_objeto": fila["tipo_objeto"],
                         "similitud": float(fila["similitud"]),
                     }
                     for fila in filas
