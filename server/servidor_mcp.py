@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 
 # Herramientas MCP
 from tools.consulta_rag import ToolsConsultaRAG
+from tools.consulta_hibrida import ToolsConsultaHibrida
 from tools.gestion_objetos import GestionObjetos
 from tools.busqueda_semantica import BusquedaSematica
 from tools.evaluacion_ragas import ToolsEvaluacionRAGAS
@@ -100,6 +101,21 @@ class GrupoConsultaRAG(ToolGroup):
         if nombre_tool == "obtener_contexto_objeto":
             return await self._tools.obtener_contexto_objeto(**argumentos)
         return {'error': f'Herramienta desconocida en GrupoConsultaRAG: {nombre_tool}'}
+
+
+class GrupoConsultaHibrida(ToolGroup):
+    """Adaptador que expone ToolsConsultaHibrida como ToolGroup."""
+
+    def __init__(self, tools: ToolsConsultaHibrida) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "consulta_hibrida":
+            return await self._tools.consulta_hibrida(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoConsultaHibrida: {nombre_tool}'}
 
 
 class GrupoGestionObjetos(ToolGroup):
@@ -323,12 +339,14 @@ def tabla_tools(tools: list) -> None:
         "buscar_imagenes_por_descripcion": "Búsqueda",
         "buscar_imagenes_similares":     "Búsqueda",
         "obtener_info_objeto_por_imagen": "Búsqueda",
+        "consulta_hibrida": "Consulta Híbrida",
         "evaluar_respuesta_rag":         "Evaluación",
         "obtener_historial_evaluaciones": "Evaluación",
     }
 
     colores_grupo = {
         "Consulta RAG": C.CYAN,
+        "Consulta Híbrida": C.CYAN,
         "Gestión":      C.BLUE,
         "Búsqueda":     C.MAGENTA,
         "Evaluación":   C.YELLOW,
@@ -505,6 +523,12 @@ class ServidorMCPAstroData:
                 GrupoConsultaRAG(ToolsConsultaRAG(codificador_texto))
             )
             ok("GrupoConsultaRAG", "DIP: CodificadorTexto")
+
+            info("Instanciando GrupoConsultaHibrida")
+            self._grupos.append(
+                GrupoConsultaHibrida(ToolsConsultaHibrida(codificador_texto, codificador_imagen))
+            )
+            ok("GrupoConsultaHibrida", "DIP: CodificadorTexto + CodificadorImagen")
 
             info("Instanciando GrupoGestionObjetos")
             self._grupos.append(
