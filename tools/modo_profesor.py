@@ -239,13 +239,13 @@ class ToolsModoProfesor:
 
         seccion_planetas = ""
         if planetas_muestra:
-            filas = "\n".join(
-                f"| 🪐 **{p['nombre']}** "
-                f"| {f\"{p['habitabilidad']:.2f}\" if p['habitabilidad'] is not None else 'N/D'} "
-                f"| {'✅' if p['tiene_agua'] else '❌'} "
-                f"| {p['atmosfera'] or 'N/D'} |"
-                for p in planetas_muestra
-            )
+            def _fila_planeta(p):
+                hab = f"{p['habitabilidad']:.2f}" if p['habitabilidad'] is not None else "N/D"
+                agua = "✅" if p['tiene_agua'] else "❌"
+                atm = p['atmosfera'] or "N/D"
+                return f"| 🪐 **{p['nombre']}** | {hab} | {agua} | {atm} |"
+
+            filas = "\n".join(_fila_planeta(p) for p in planetas_muestra)
             seccion_planetas = (
                 f"## 🌍 Planetas — ranking de habitabilidad\n\n"
                 f"| Planeta | Puntaje | Agua | Atmósfera |\n"
