@@ -36,7 +36,10 @@ tools/                        ← herramientas MCP (adaptadores de protocolo)
   ├── consulta_hibrida.py     ← combina vector search + filtros relacionales en SQL
   ├── busqueda_semantica.py
   ├── gestion_objetos.py
-  └── evaluacion_ragas.py
+  ├── evaluacion_ragas.py
+  ├── presentacion.py
+  ├── modo_profesor.py
+  └── terminal_profesor.py
       │
       ▼
 services/                     ← casos de uso de aplicación
@@ -193,8 +196,8 @@ Los `id_doc` del ground truth son marcadores de posición (`TODO`) hasta que los
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/astrodata-mcp.git
-cd astrodata-mcp
+git clone https://github.com/TheLaico/AstroData-Lab.git
+cd AstroData-Lab
 
 # 2. Crear entorno virtual
 python -m venv .venv
@@ -205,7 +208,7 @@ source .venv/bin/activate      # macOS/Linux
 pip install -r requerimientos.txt
 
 # 4. Configurar variables de entorno
-cp config/.env.ejemplo config/.env
+cp config/.env.example config/.env
 # Editar config/.env: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 # Para PostgreSQL local usar DB_SSL=disable
 # Para Neon u otros servicios con SSL usar DB_SSL=require
