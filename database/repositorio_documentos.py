@@ -586,6 +586,97 @@ class RepositorioDocumentos:
                 f"Error al guardar embedding de imagen {id_imagen}: {e}"
             ) from e
 
+    # ------------------------------------------------------------------
+    # CONSULTA HÍBRIDA SQL + VECTOR (query builder dinámico)
+    # ------------------------------------------------------------------
+
+    # Columnas de Documento que se permiten como filtros relacionales.
+    # Whitelist explícita para prevenir SQL injection.
+    _FILTROS_PERMITIDOS = {"idioma", "fuente", "id_objeto"}
+
+    async def consulta_hibrida_sql(
+        self,
+        vector_consulta: List[float],
+        filtros: Optional[dict] = None,
+        top_k: int = 5,
+    ) -> List[dict]:
+        """
+        Combina vector search con filtros relacionales en una sola query SQL.
+
+        Construye el WHERE dinámicamente según los filtros recibidos,
+        usando una whitelist de columnas para evitar SQL injection.
+
+        SQL generada (ejemplo con filtros):
+            SELECT et.id_doc, d.titulo, et.chunk_id, et.contenido_chunk,
+                   et.estrategia_chunking,
+                   1 - (et.vector <=> $1::vector) AS similitud
+            FROM Embedding_Texto et
+            JOIN Documento d ON d.id_doc = et.id_doc
+            WHERE d.idioma = $3
+            ORDER BY et.vector <=> $1::vector
+            LIMIT $2
+
+        Args:
+            vector_consulta: Embedding de la consulta.
+            filtros: Dict con pares columna→valor. Solo se aplican las claves
+                     en _FILTROS_PERMITIDOS; el resto se ignora.
+            top_k: Número máximo de resultados.
+
+        Returns:
+            Lista de dicts con id_doc, titulo, chunk_id, contenido,
+            estrategia_chunking y similitud.
+        """
+        if not vector_consulta:
+            raise ValueError("El vector de consulta no puede estar vacío")
+        if not isinstance(top_k, int) or top_k <= 0:
+            raise ValueError("top_k debe ser un entero positivo")
+
+        vector_str = "[" + ",".join(str(v) for v in vector_consulta) + "]"
+
+        # $1 = vector, $2 = top_k; los filtros arrancan en $3
+        params: list = [vector_str, top_k]
+        condiciones: list = []
+
+        for clave, valor in (filtros or {}).items():
+            if clave not in self._FILTROS_PERMITIDOS or valor is None:
+                continue
+            params.append(valor)
+            condiciones.append(f"d.{clave} = ${len(params)}")
+
+        where_clause = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
+
+        sql = f"""
+            SELECT
+                et.id_doc,
+                d.titulo,
+                et.chunk_id,
+                et.contenido_chunk              AS contenido,
+                et.estrategia_chunking,
+                1 - (et.vector <=> $1::vector)  AS similitud
+            FROM Embedding_Texto et
+            JOIN Documento d ON d.id_doc = et.id_doc
+            {where_clause}
+            ORDER BY et.vector <=> $1::vector
+            LIMIT $2
+        """
+
+        try:
+            async with conexion_bd.obtener_conexion() as conexion:
+                filas = await conexion.fetch(sql, *params)
+                return [
+                    {
+                        "id_doc": fila["id_doc"],
+                        "titulo": fila["titulo"],
+                        "chunk_id": fila["chunk_id"],
+                        "contenido": fila["contenido"],
+                        "estrategia_chunking": fila["estrategia_chunking"],
+                        "similitud": float(fila["similitud"]),
+                    }
+                    for fila in filas
+                ]
+        except Exception as e:
+            raise RuntimeError(f"Error en consulta híbrida SQL: {e}") from e
+
     async def buscar_imagenes_similares(
         self,
         vector_consulta: List[float],

@@ -43,6 +43,7 @@ class GestionObjetosService:
         if not isinstance(nombre, str) or not nombre.strip():
             return {"error": "El nombre del objeto no puede estar vacio."}
 
+        objeto = None
         try:
             objeto = await self.repo_objetos.crear_objeto(nombre, descripcion_cientifica)
             embedding_id = None
@@ -59,6 +60,13 @@ class GestionObjetosService:
                 "embedding_id": embedding_id,
             }
         except Exception as exc:
+            # Transacción compensatoria: si el embedding falla después de crear
+            # el objeto, eliminar el objeto para no dejar registros huérfanos.
+            if objeto is not None:
+                try:
+                    await self.repo_objetos.eliminar_objeto(getattr(objeto, "id_objeto"))
+                except Exception:
+                    pass  # Si el rollback falla, el error original es prioritario
             return {"error": f"Error al crear objeto astronomico: {exc}"}
 
     async def obtener_objeto_astronomico(

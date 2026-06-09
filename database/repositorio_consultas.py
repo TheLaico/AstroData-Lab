@@ -336,10 +336,13 @@ class RepositorioConsultas:
         """
         if datos.id_consulta <= 0:
             raise ValueError("id_consulta debe ser positivo")
-        
+
+        if datos.id_doc is None and datos.id_imagen is None:
+            raise ValueError("El resultado debe estar asociado a un documento o a una imagen.")
+
         if not (0.0 <= datos.relevancia <= 1.0):
             raise ValueError("relevancia debe estar entre 0.0 y 1.0")
-        
+
         try:
             async with conexion_bd.obtener_conexion() as conexion:
                 id_resultado = await conexion.fetchval(
