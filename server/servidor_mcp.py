@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # MCP SDK
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, Prompt, PromptMessage, GetPromptResult
 
 # Configuración y base de datos
 from config.ajustes import ajustes
@@ -49,6 +49,8 @@ from tools.gestion_objetos import GestionObjetos
 from tools.busqueda_semantica import BusquedaSematica
 from tools.evaluacion_ragas import ToolsEvaluacionRAGAS
 from tools.presentacion import ToolsPresentacionAstroData
+from tools.modo_profesor import ToolsModoProfesor
+from tools.terminal_profesor import ToolsTerminalProfesor
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -216,6 +218,36 @@ class GrupoPresentacion(ToolGroup):
         return {'error': f'Herramienta desconocida en GrupoPresentacion: {nombre_tool}'}
 
 
+class GrupoModoProfesor(ToolGroup):
+    """Adaptador que expone el modo de demostración guiada para el profesor."""
+
+    def __init__(self, tools: ToolsModoProfesor) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "modo_profesor":
+            return await self._tools.modo_profesor(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoModoProfesor: {nombre_tool}'}
+
+
+class GrupoTerminalProfesor(ToolGroup):
+    """Adaptador que expone la terminal de consultas híbridas guiada."""
+
+    def __init__(self, tools: ToolsTerminalProfesor) -> None:
+        self._tools = tools
+
+    def obtener_definiciones_tools(self) -> list[Tool]:
+        return self._tools.obtener_definiciones_tools()
+
+    async def ejecutar(self, nombre_tool: str, argumentos: Dict[str, Any]) -> Any:
+        if nombre_tool == "usarterminal":
+            return await self._tools.usarterminal(**argumentos)
+        return {'error': f'Herramienta desconocida en GrupoTerminalProfesor: {nombre_tool}'}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSOLA: colores y utilidades de presentación
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,6 +374,8 @@ def tabla_tools(tools: list) -> None:
         "consulta_hibrida": "Consulta Híbrida",
         "evaluar_respuesta_rag":         "Evaluación",
         "obtener_historial_evaluaciones": "Evaluación",
+        "modo_profesor":                 "Demo Profesor",
+        "usarterminal":                  "Terminal",
     }
 
     colores_grupo = {
@@ -349,8 +383,10 @@ def tabla_tools(tools: list) -> None:
         "Consulta Híbrida": C.CYAN,
         "Gestión":      C.BLUE,
         "Búsqueda":     C.MAGENTA,
-        "Evaluación":   C.YELLOW,
-        "Presentacion": C.GREEN,
+        "Evaluación":    C.YELLOW,
+        "Presentacion":  C.GREEN,
+        "Demo Profesor": C.GREEN,
+        "Terminal":      C.CYAN,
     }
 
     for tool in tools:
@@ -548,6 +584,18 @@ class ServidorMCPAstroData:
             )
             ok("GrupoEvaluacionRAGAS")
 
+            info("Instanciando GrupoModoProfesor")
+            self._grupos.append(
+                GrupoModoProfesor(ToolsModoProfesor())
+            )
+            ok("GrupoModoProfesor", "Demo guiada /modotexterprofesor")
+
+            info("Instanciando GrupoTerminalProfesor")
+            self._grupos.append(
+                GrupoTerminalProfesor(ToolsTerminalProfesor(codificador_texto))
+            )
+            ok("GrupoTerminalProfesor", "Terminal /usarterminal — consultas híbridas")
+
         except Exception as e:
             err(f"Error al inicializar herramientas: {e}")
             raise
@@ -597,6 +645,91 @@ class ServidorMCPAstroData:
                     resultado = {'error': str(e), 'detalles': repr(e)}
 
                 return [TextContent(type="text", text=str(resultado))]
+
+            # ── Prompts MCP (slash commands en Claude Desktop) ────────────────
+            @self.servidor.list_prompts()
+            async def listar_prompts() -> list[Prompt]:
+                return [
+                    Prompt(
+                        name="modotexterprofesor",
+                        description=(
+                            "Activa la demostración guiada de AstroData Lab para el "
+                            "Profesor Paolo. Muestra saludo personalizado, estado en vivo "
+                            "del sistema, menú de opciones y activa el modo paso a paso."
+                        ),
+                    ),
+                    Prompt(
+                        name="usarterminal",
+                        description=(
+                            "Terminal de consultas híbridas. Escribe el intent como "
+                            "comentario SQL (-- texto) y la tool ejecuta la consulta "
+                            "híbrida real mostrando todos los pasos del pipeline."
+                        ),
+                        arguments=[
+                            {
+                                "name": "entrada",
+                                "description": (
+                                    "Bloque con comentarios SQL (--) que describen el intent. "
+                                    "El código SQL después del comentario es ignorado."
+                                ),
+                                "required": True,
+                            }
+                        ],
+                    ),
+                ]
+
+            @self.servidor.get_prompt()
+            async def obtener_prompt(name: str, arguments: dict | None = None) -> GetPromptResult:
+                if name == "modotexterprofesor":
+                    return GetPromptResult(
+                        messages=[
+                            PromptMessage(
+                                role="user",
+                                content=TextContent(
+                                    type="text",
+                                    text=(
+                                        "Invoca ahora mismo la tool modo_profesor "
+                                        "con nombre_profesor='Paolo'. "
+                                        "Cuando recibas el resultado, toma el campo "
+                                        "'markdown_final' y muéstralo EXACTAMENTE "
+                                        "como está, sin agregar ningún texto propio "
+                                        "antes ni después. Solo el markdown renderizado."
+                                    ),
+                                ),
+                            )
+                        ]
+                    )
+
+                if name == "usarterminal":
+                    entrada = (arguments or {}).get("entrada", "")
+                    if not entrada:
+                        entrada = (
+                            "-- escribe aquí tu intent\n"
+                            "-- ejemplo: planetas similares a la Tierra con idioma=es\n"
+                        )
+                    return GetPromptResult(
+                        messages=[
+                            PromptMessage(
+                                role="user",
+                                content=TextContent(
+                                    type="text",
+                                    text=(
+                                        f"Invoca la tool usarterminal con el siguiente "
+                                        f"argumento entrada:\n\n{entrada}\n\n"
+                                        "Cuando recibas el resultado, renderiza el campo "
+                                        "presentacion_markdown completo con todo el formato "
+                                        "Markdown. Muestra las tablas y bloques de código "
+                                        "exactamente como están."
+                                    ),
+                                ),
+                            )
+                        ]
+                    )
+
+                return GetPromptResult(messages=[])
+
+            ok("Prompt /modotexterprofesor registrado", "slash command Claude Desktop")
+            ok("Prompt /usarterminal registrado",       "terminal consultas híbridas")
 
             print(
                 f"\n  {C.GREEN}✓{C.RESET}  "
