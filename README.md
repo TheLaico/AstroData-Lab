@@ -1,5 +1,7 @@
 # AstroData Lab
 
+![AstroData Lab](Image/Baner-1.png)
+
 Sistema híbrido de exploración astronómica que combina un modelo relacional jerárquico con búsqueda vectorial semántica, expuesto como servidor MCP (Model Context Protocol) para Claude Desktop. Permite consultar, analizar y razonar sobre objetos astronómicos almacenados en PostgreSQL, usando un pipeline RAG completo con evaluación de calidad.
 
 ---
