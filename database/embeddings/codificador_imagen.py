@@ -21,7 +21,7 @@ from PIL import Image
 from transformers import CLIPModel, CLIPProcessor
 
 from config.ajustes import ajustes
-from embeddings.interfaz_codificador import CodificadorBase
+from database.embeddings.interfaz_codificador import CodificadorBase
 
 
 class CodificadorImagen(CodificadorBase):

@@ -49,7 +49,7 @@ def chunks_ejemplo(vector_ejemplo) -> List[dict]:
 @pytest.fixture
 def mock_codificador(vector_ejemplo):
     """Fixture con codificador mockeado que retorna el vector de ejemplo."""
-    from embeddings.interfaz_codificador import CodificadorBase
+    from database.embeddings.interfaz_codificador import CodificadorBase
     codificador = MagicMock(spec=CodificadorBase)
     codificador.codificar_texto = AsyncMock(return_value=vector_ejemplo)
     codificador.nombre_modelo = AsyncMock(return_value="all-MiniLM-L6-v2")

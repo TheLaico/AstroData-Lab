@@ -26,7 +26,7 @@ def vector_ejemplo() -> List[float]:
 @pytest.fixture
 def mock_codificador(vector_ejemplo):
     """Fixture con codificador de texto mockeado."""
-    from embeddings.interfaz_codificador import CodificadorBase
+    from database.embeddings.interfaz_codificador import CodificadorBase
     codificador = MagicMock(spec=CodificadorBase)
     codificador.codificar_texto = AsyncMock(return_value=vector_ejemplo)
     codificador.nombre_modelo = AsyncMock(return_value="all-MiniLM-L6-v2")

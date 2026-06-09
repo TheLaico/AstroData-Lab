@@ -15,7 +15,7 @@ from functools import partial
 from sentence_transformers import SentenceTransformer
 from typing import List
 from config.ajustes import ajustes
-from embeddings.interfaz_codificador import CodificadorBase
+from database.embeddings.interfaz_codificador import CodificadorBase
 
 
 class CodificadorTexto(CodificadorBase):
